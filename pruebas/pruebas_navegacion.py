@@ -3,12 +3,12 @@
 Pruebas del módulo de navegación adaptativa (A*) y del esbozo de PSO.
 Responsable: Orellana Castro Keyla
 
-Ejecutar:  python pruebas_navegacion.py
+Ejecutar:  python -m pruebas.pruebas_navegacion
 """
 import sys
 from pathlib import Path
 
-CARPETA = Path(__file__).resolve().parent
+CARPETA = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CARPETA))
 
 import math
@@ -18,7 +18,7 @@ from modulos.entorno import Entorno
 from modulos.navegacion_astar import (NavegadorAdaptativo, astar, costo_ruta,
                                       longitud_ruta, punto_a_celda, densidad_a_D)
 from modulos.optimizacion_pso import pso
-from demo_navegacion import (mapa_densidad_sintetico, agente_en_entrada,
+from demos.demo_navegacion import (mapa_densidad_sintetico, agente_en_entrada,
                              rutas_A_y_B, escala_de_cambio)
 
 

@@ -3,17 +3,17 @@
 Demo de navegación adaptativa: genera la comparación visual de rutas A vs B.
 Responsable: Orellana Castro Keyla
 
-Ejecutar (desde cualquier carpeta):
-    python demo_navegacion.py
+Ejecutar desde la raíz del proyecto:
+    python -m demos.demo_navegacion
 
 Genera capturas/comparacion_rutas_A_vs_B.png y imprime los números del informe.
-Usa un mapa de densidad SINTÉTICO (una cola frente al paso principal), porque la
-simulación completa (agentes + diagnóstico) todavía no está integrada.
+Usa un mapa de densidad SINTÉTICO (una cola frente al paso principal) para
+inspeccionar el planificador de forma aislada del ciclo integrado de main.py.
 """
 import sys
 from pathlib import Path
 
-CARPETA = Path(__file__).resolve().parent
+CARPETA = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CARPETA))
 
 import numpy as np

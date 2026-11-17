@@ -14,13 +14,13 @@ Qué hace este script
 4. Imprime la tabla de umbrales y resultados para la Sección 5.5.
 
 Ejecutar:
-    py demo_diagnostico.py [--no-mostrar]
+    python -m demos.demo_diagnostico [--no-mostrar]
 """
 
 import sys
 from pathlib import Path
 
-CARPETA_PROYECTO = Path(__file__).resolve().parent
+CARPETA_PROYECTO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CARPETA_PROYECTO))
 
 import numpy as np

@@ -5,15 +5,15 @@ ARCHIVOS NUEVOS (no se modificó nada del entorno)
 -------------------------------------------------
 modulos/navegacion_astar.py     A* + clase NavegadorAdaptativo (modo A y B)
 modulos/optimizacion_pso.py     Esbozo de PSO (no integrado)
-demo_navegacion.py              Genera capturas/comparacion_rutas_A_vs_B.png
-pruebas_navegacion.py           11 pruebas
+demos/demo_navegacion.py              Genera capturas/comparacion_rutas_A_vs_B.png
+pruebas/pruebas_navegacion.py           11 pruebas
 informe/Seccion_5_6.txt         Texto para el informe
 
 EJECUCION (desde la carpeta que contiene main.py)
 -------------------------------------------------
 python -m pip install -r requirements.txt
-python demo_navegacion.py          (muestra la figura y la guarda en capturas/)
-python pruebas_navegacion.py       (debe terminar con "TODAS LAS PRUEBAS ... EXITOSAS")
+python -m demos.demo_navegacion          (muestra la figura y la guarda en capturas/)
+python -m pruebas.pruebas_navegacion       (debe terminar con "TODAS LAS PRUEBAS ... EXITOSAS")
 
 USO DESDE EL PROGRAMA PRINCIPAL
 -------------------------------
@@ -46,6 +46,7 @@ Se cambian al crear el navegador: NavegadorAdaptativo(entorno, "B", alpha=3, tau
 
 LIMITACIONES
 ------------
-- La comparacion A vs B se hizo con un mapa de densidad sintetico, no con la simulacion integrada.
+- La demo de navegación usa densidad sintética. La batería integrada A/B se
+  documenta por separado en README.md e informe/Seccion_5_7_a_5_10.txt.
 - A* sigue centros de celda de 1 m: no modela el radio del agente ni choques entre agentes.
 - El PSO es un esbozo: falta conectar evaluar(theta) a la simulacion completa.

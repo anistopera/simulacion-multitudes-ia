@@ -7,7 +7,7 @@ instalación de pygame 2.6.1 desde fuentes falló en este equipo.
 Ejecutar `python main.py --modo B --agentes 40 --semilla 42 --visualizar`
 para el ciclo completo con telemetría, DBSCAN, diagnóstico y A* adaptativo.
 H alterna densidad, S guarda una captura con fecha en `capturas/` y Esc cierra.
-`python demo_visualizacion.py` conserva una demostración independiente con
+`python -m demos.demo_visualizacion` conserva una demostración independiente con
 40 agentes reales y rutas A* fijas; no es una escena estática.
 
 `--visualizar` corresponde a corridas individuales y no se combina con
@@ -16,7 +16,7 @@ y las métricas se calculan al corte real. Los CSV visuales usan el sufijo
 `_visual` para conservar las observaciones de la batería experimental.
 
 Para una captura sin ventana:
-`python demo_visualizacion.py --sin-ventana --calor --captura capturas/demo_visualizacion.png`
+`python -m demos.demo_visualizacion --sin-ventana --calor --captura capturas/demo_visualizacion.png`
 
 ## Contrato de integración
 
@@ -64,16 +64,16 @@ su área; esto es una instantánea, no un promedio temporal. La escala fija de
 calor va de 0 a 4 personas/m² y satura por encima de 4. Se dibuja debajo de
 paredes y agentes. Velocidad deseada cero se muestra en gris.
 
-Comprobaciones: `python pruebas_visualizacion.py`, `python pruebas_entorno.py`,
-`python prueba_dos_rutas.py`, `python prueba_compatibilidad_astar.py`.
+Comprobaciones: `python -m pruebas.pruebas_visualizacion`, `python -m pruebas.pruebas_entorno`,
+`python -m pruebas.prueba_dos_rutas`, `python -m pruebas.prueba_compatibilidad_astar`.
 
-## Integración en el repositorio clonado
+## Demo integrada desde la raíz del repositorio
 
-La carpeta `simulacion-multitudes-ia` contiene la demo integrada y una copia
-del módulo de visualización. Su `main.py` se conserva. Desde la carpeta padre:
+La demo reutiliza los módulos reales del proyecto. Ejecutar desde la carpeta
+que contiene `main.py` (con el entorno virtual activado):
 
 ```powershell
-.venv/Scripts/python.exe simulacion-multitudes-ia/demo_visualizacion.py --calor
+python -m demos.demo_visualizacion --calor
 ```
 
 La demo genera 40 agentes (también admite `--cantidad 80` o `120`) con semilla
@@ -83,11 +83,11 @@ personas/m² y calculada por área útil; se actualiza cada segundo simulado.
 La matriz normalizada `D` de navegación no es una densidad y no se pasa a la vista.
 
 ```powershell
-.venv/Scripts/python.exe simulacion-multitudes-ia/demo_visualizacion.py --sin-ventana --frames 100 --calor --captura simulacion-multitudes-ia/capturas/visualizacion_integrada.png
+python -m demos.demo_visualizacion --sin-ventana --frames 100 --calor --captura capturas/visualizacion_integrada.png
 ```
 
-Pruebas en el clon: `pruebas_visualizacion.py` y
-`pruebas_visualizacion_integrada.py`. La segunda usa los módulos reales de
+Pruebas en el clon: `pruebas/pruebas_visualizacion.py` y
+`pruebas/pruebas_visualizacion_integrada.py`. La segunda usa los módulos reales de
 agentes, navegación y diagnóstico y comprueba que dibujar no los modifica.
 
 El A* del ZIP de Keyla coincide con el del clon tras normalizar finales de línea;

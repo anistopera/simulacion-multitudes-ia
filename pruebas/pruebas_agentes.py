@@ -1,4 +1,4 @@
-"""Pruebas del motor de Sthaicy: python3 pruebas_agentes.py."""
+"""Pruebas del motor de Sthaicy: python -m pruebas.pruebas_agentes."""
 import math
 import unittest
 

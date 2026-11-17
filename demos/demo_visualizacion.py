@@ -29,7 +29,7 @@ def main():
     from modulos.diagnostico import DiagnosticoCongestion
     from modulos.visualizacion import Visualizacion
 
-    raiz = Path(__file__).resolve().parent
+    raiz = Path(__file__).resolve().parents[1]
     entorno = Entorno(configuracion=raiz / 'configuracion.json')
     agentes = generar_agentes(entorno, args.cantidad, args.semilla)
     motor = MotorAgentes(entorno, agentes)

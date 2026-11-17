@@ -1,4 +1,4 @@
-"""Pruebas de telemetría de Flores Choquetopa Nicole: python pruebas_telemetria.py."""
+"""Pruebas de telemetría de Flores Choquetopa Nicole: python -m pruebas.pruebas_telemetria."""
 
 import csv
 from dataclasses import asdict

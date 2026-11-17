@@ -4,14 +4,14 @@ Pruebas unitarias y de integración para el Módulo 6: Diagnóstico de congesti�
 Responsable: Lora Quilla Santiago Leonardo
 
 Ejecutar:
-    py pruebas_diagnostico.py
+    python -m pruebas.pruebas_diagnostico
 """
 
 import math
 import sys
 from pathlib import Path
 
-CARPETA_PROYECTO = Path(__file__).resolve().parent
+CARPETA_PROYECTO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CARPETA_PROYECTO))
 
 import numpy as np

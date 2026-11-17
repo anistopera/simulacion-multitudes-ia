@@ -1,7 +1,7 @@
 """Evidencia del movimiento de Sthaicy, sin implementar la interfaz de Wendy.
 
-python3 demo_agentes.py --cantidad 40 --no-mostrar
-python3 demo_agentes.py --cantidad 40 --no-mostrar --gif
+python -m demos.demo_agentes --cantidad 40 --no-mostrar
+python -m demos.demo_agentes --cantidad 40 --no-mostrar --gif
 """
 import argparse
 from pathlib import Path
@@ -12,7 +12,7 @@ from modulos.agentes import MotorAgentes, generar_agentes
 from modulos.entorno import Entorno
 
 
-CARPETA = Path(__file__).resolve().parent
+CARPETA = Path(__file__).resolve().parents[1]
 
 
 def main():

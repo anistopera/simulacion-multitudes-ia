@@ -4,8 +4,8 @@ Responsable: Bustamante Escobar Jhosselin Sthaicy
 ARCHIVOS
 --------
 modulos/agentes.py                 Agente, generar_agentes, MotorAgentes, posicion_valida
-pruebas_agentes.py                 Pruebas físicas y de compatibilidad
-demo_agentes.py                   Capturas y animación del movimiento (Matplotlib)
+pruebas/pruebas_agentes.py                 Pruebas físicas y de compatibilidad
+demos/demo_agentes.py                   Capturas y animación del movimiento (Matplotlib)
 informe/Seccion_5_1_agentes.txt     Segunda mitad de 5.1, para unir al texto del entorno
 informe/Revision_diagnostico_integracion.txt  Observaciones sobre el diagnóstico recibido
 capturas/agentes_40_semilla_42.png  Cuatro instantes de una ejecución real del motor
@@ -16,17 +16,17 @@ REQUISITOS Y EJECUCIÓN
 Python 3.10 o superior. Usa las dependencias existentes: NumPy y Matplotlib.
 Desde la raíz del proyecto:
 
-python3 pruebas_agentes.py
-python3 demo_agentes.py --cantidad 40 --no-mostrar --gif
-python3 demo_agentes.py --cantidad 80 --no-mostrar
-python3 demo_agentes.py --cantidad 120 --no-mostrar
+python -m pruebas.pruebas_agentes
+python -m demos.demo_agentes --cantidad 40 --no-mostrar --gif
+python -m demos.demo_agentes --cantidad 80 --no-mostrar
+python -m demos.demo_agentes --cantidad 120 --no-mostrar
 
 Opciones: --semilla 42, --duracion 60. El GIF reproduce 1 segundo simulado
 por fotograma a 10 fotogramas/s: es una vista acelerada, no tiempo real.
 Cada ejecución guarda archivos con cantidad y semilla en el nombre.
-main.py sigue siendo la demostración del entorno; la integración general
-corresponde a Alexander. Este módulo no implementa la ventana Pygame de Wendy,
-telemetría de Nicole, DBSCAN de Daniel ni optimización de Keyla.
+main.py ejecuta el ciclo integrado y permite activar la ventana con --visualizar.
+El módulo de agentes conserva su responsabilidad física; consume rutas de Keyla
+y entrega su estado a visualización, telemetría, DBSCAN y diagnóstico.
 
 CONTRATO QUE RECIBE WENDY
 ------------------------
@@ -124,7 +124,8 @@ integrador; el límite corresponde a las fuerzas en movimiento sin contacto.
 Puede producir detenciones, bloqueos persistentes o simetrías en multitudes
 densas. No es un solucionador de contacto humano ni una simulación validada.
 No se garantiza que todos los agentes lleguen en el horizonte de 180 s.
-No se han calibrado ko/ks/kr, ni comparado los resultados A/B con varias semillas.
+No se han calibrado ko/ks/kr. La batería A/B con tres semillas está documentada
+en README.md y en informe/Seccion_5_7_a_5_10.txt.
 
 INTEGRACIÓN CON KEYLA
 --------------------
@@ -144,7 +145,7 @@ Keyla reemplaza a.ruta directamente; el motor lee esa lista en cada paso.
 Para un escenario desconectado el constructor lanza ValueError si no encuentra
 ruta inicial. No mueve agentes en línea recta a través de la barrera.
 
-INTEGRACIÓN CON SANTIAGO Y LOS MÓDULOS PENDIENTES
+INTEGRACIÓN CON SANTIAGO Y LOS DEMÁS MÓDULOS
 -----------------------------------------------
 from modulos.diagnostico import DiagnosticoCongestion
 diag = DiagnosticoCongestion(entorno=entorno)
