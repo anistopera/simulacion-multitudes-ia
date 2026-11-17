@@ -1,0 +1,164 @@
+MODULO 2: MOTOR DE AGENTES
+Responsable: Bustamante Escobar Jhosselin Sthaicy
+
+ARCHIVOS
+--------
+modulos/agentes.py                 Agente, generar_agentes, MotorAgentes, posicion_valida
+pruebas_agentes.py                 Pruebas físicas y de compatibilidad
+demo_agentes.py                   Capturas y animación del movimiento (Matplotlib)
+informe/Seccion_5_1_agentes.txt     Segunda mitad de 5.1, para unir al texto del entorno
+informe/Revision_diagnostico_integracion.txt  Observaciones sobre el diagnóstico recibido
+capturas/agentes_40_semilla_42.png  Cuatro instantes de una ejecución real del motor
+capturas/agentes_40_semilla_42.gif  Animación de la misma ejecución
+
+REQUISITOS Y EJECUCIÓN
+---------------------
+Python 3.10 o superior. Usa las dependencias existentes: NumPy y Matplotlib.
+Desde la raíz del proyecto:
+
+python3 pruebas_agentes.py
+python3 demo_agentes.py --cantidad 40 --no-mostrar --gif
+python3 demo_agentes.py --cantidad 80 --no-mostrar
+python3 demo_agentes.py --cantidad 120 --no-mostrar
+
+Opciones: --semilla 42, --duracion 60. El GIF reproduce 1 segundo simulado
+por fotograma a 10 fotogramas/s: es una vista acelerada, no tiempo real.
+Cada ejecución guarda archivos con cantidad y semilla en el nombre.
+main.py sigue siendo la demostración del entorno; la integración general
+corresponde a Alexander. Este módulo no implementa la ventana Pygame de Wendy,
+telemetría de Nicole, DBSCAN de Daniel ni optimización de Keyla.
+
+CONTRATO QUE RECIBE WENDY
+------------------------
+from modulos.entorno import Entorno
+from modulos.agentes import generar_agentes, MotorAgentes
+
+entorno = Entorno(configuracion="configuracion.json")
+agentes = generar_agentes(entorno, cantidad=40, semilla=42)
+motor = MotorAgentes(entorno, agentes)
+
+# En cada paso de física de 0.1 s, independientemente de los FPS:
+motor.actualizar(dt=0.1)
+
+for agente in agentes:
+    if not agente.activo:
+        continue
+    print(agente.id)
+    print(agente.x, agente.y)        # metros, origen inferior izquierdo
+    print(agente.vx, agente.vy)      # m/s
+    print(agente.v_deseada)          # m/s, 0.9 a 1.5 en el generador
+    print(agente.radio)             # 0.25 m
+    velocidad = (agente.vx**2 + agente.vy**2)**0.5
+
+# Datos para el panel:
+activos = len(motor.agentes_activos)
+llegados = sum(a.llegado for a in agentes)
+tiempo = motor.tiempo
+
+Para Pygame: x_px = margen_x + agente.x * escala;
+y_px = margen_y + (entorno.alto - agente.y) * escala.
+El radio en pantalla es agente.radio * escala. La escala es píxeles/metro.
+El módulo no dibuja, no abre ventanas, no duerme y no usa el reloj real.
+El generador devuelve la lista llamada agentes en este ejemplo. No hay un
+estado global compartido: la misma lista se pasa a todos los consumidores.
+El motor conserva tanto la lista como la identidad de sus objetos.
+
+ESTADO COMPLETO Y CICLO DE VIDA
+------------------------------
+id, x, y, vx, vy, v_deseada, radio, destino, ruta,
+activo, llegado, tiempo_llegada (None hasta llegar).
+También existe la propiedad de lectura velocidad.
+
+Agente(id=0, x=1.0, y=11.0, destino=entorno.destino) permite creación manual.
+Cada id debe ser único. destino es una tupla (x,y) física válida para el disco.
+ruta es una lista independiente por agente con puntos (x,y) en metros.
+Los waypoints se consumen conforme avanza el agente. El motor mira hasta
+1.5 m por delante, únicamente si el segmento está libre para su radio.
+Se conserva el destino real, aunque A* termine en el centro de otra coordenada
+perteneciente a su misma celda. La llegada se registra a <=0.50 m del destino.
+Esta zona de llegada evita exigir que todos alcancen exactamente el mismo
+punto mientras sus discos se repelen.
+Al llegar: activo=False, llegado=True, vx=vy=0 y tiempo_llegada=motor.tiempo.
+El objeto permanece en agentes para contadores e historial; ya no colisiona
+ni se dibuja. No se debe incluir entre peatones presentes en diagnóstico.
+La velocidad pública representa el desplazamiento realizado, salvo que en
+el paso de llegada se pone a cero al retirar al agente.
+
+GENERACIÓN
+----------
+40/80/120 agentes con RNG local de NumPy y semilla explícita (42 por defecto).
+Misma cantidad, semilla, entorno y parámetros reproducen el mismo estado.
+Cada ejecución crea objetos nuevos; para comparar A/B no reutilizar objetos
+mutados. No se modifica la semilla global de NumPy.
+
+La entrada es un punto: los agentes se distribuyen en una zona a su alrededor,
+no todos en la misma coordenada. Por defecto x=0.5..8 m e y=5..17 m para
+la entrada (1,11). Se sortean sitios de una retícula de 0.60 m con jitter de
++/-0.02 m, descartando posiciones que invadan obstáculos. La separación
+mínima inicial es mayor que el diámetro de 0.50 m.
+Se puede pasar zona=(xmin,ymin,xmax,ymax), límites para centros en metros.
+Si no caben todos, se lanza ValueError; nunca se fuerza un solapamiento.
+
+MOVIMIENTO Y PARÁMETROS INICIALES
+--------------------------------
+F = ko*F_objetivo + ks*F_separacion + kr*F_obstaculos (masa unitaria).
+F_objetivo = (v_deseada*direccion_objetivo - v)/relajacion.
+Separación radial entre agentes: 4*exp(-hueco/0.15), hasta hueco=0.60 m.
+Repulsión de paredes y bordes: 6*exp(-hueco/0.15), hasta hueco=0.60 m.
+hueco descuenta los radios. Los pesos son configurables, no están calibrados.
+
+MotorAgentes(entorno, agentes, ko=1, ks=1, kr=1,
+             velocidad_max=1.5, aceleracion_max=3.0,
+             relajacion=0.5, tolerancia_ruta=0.25,
+             tolerancia_llegada=0.50)
+
+Se limita la aceleración de fuerzas a 3 m/s² y la rapidez a 1.5 m/s.
+Se integra v_nueva = limitar(v + limitar(F)*dt) y p_nueva = p + v_nueva*dt.
+Los pasos mayores que 0.1 s se subdividen para estabilidad.
+
+Una restricción geométrica adicional evita atravesar paredes con todo el
+radio y evita colisiones entre trayectorias relativas durante cada paso.
+Los movimientos que colisionan se cancelan como contacto inelástico.
+Esta frenada de seguridad puede superar el límite de aceleración del
+integrador; el límite corresponde a las fuerzas en movimiento sin contacto.
+Puede producir detenciones, bloqueos persistentes o simetrías en multitudes
+densas. No es un solucionador de contacto humano ni una simulación validada.
+No se garantiza que todos los agentes lleguen en el horizonte de 180 s.
+No se han calibrado ko/ks/kr, ni comparado los resultados A/B con varias semillas.
+
+INTEGRACIÓN CON KEYLA
+--------------------
+El constructor usa NavegadorAdaptativo en modo A para asignar rutas a agentes
+que las tengan vacías; preserva las rutas no vacías recibidas. No modifica A*.
+Para modo B, el integrador debe crear su propio navegador, asignar inicialmente
+las rutas y conservar esa misma instancia para respetar tau:
+
+from modulos.navegacion_astar import NavegadorAdaptativo
+nav = NavegadorAdaptativo(entorno, modo="B")
+for a in agentes:
+    nav.asignar_ruta_inicial(a, t=0.0)
+# Después del diagnóstico, cada segundo:
+nav.actualizar_todos(motor.agentes_activos, motor.tiempo, D)
+
+Keyla reemplaza a.ruta directamente; el motor lee esa lista en cada paso.
+Para un escenario desconectado el constructor lanza ValueError si no encuentra
+ruta inicial. No mueve agentes en línea recta a través de la barrera.
+
+INTEGRACIÓN CON SANTIAGO Y LOS MÓDULOS PENDIENTES
+-----------------------------------------------
+from modulos.diagnostico import DiagnosticoCongestion
+diag = DiagnosticoCongestion(entorno=entorno)
+# Tras 10 pasos físicos de 0.1 s:
+estados, D = diag.actualizar(motor.agentes_activos, dt=1.0)
+# D: (10,15), lista para nav.actualizar_todos(...).
+
+Usar un contador entero de pasos, no t % 1 == 0 con flotantes.
+Santiago no filtra activo/llegado: debe recibir motor.agentes_activos.
+Los atributos son compatibles; la persistencia de diagnóstico usa el tiempo
+transcurrido entre llamadas, no el dt físico si se llama cada segundo.
+
+Nicole puede leer los mismos objetos para su telemetría; el motor no calcula
+dist_vecino_medio ni t_bloqueo, no escribe CSV y no sustituye su módulo.
+Para Daniel: posiciones = np.array([[a.x,a.y] for a in motor.agentes_activos],
+                                 dtype=float).reshape(-1,2)
+Los llegados y tiempo_llegada siguen disponibles en la lista completa.

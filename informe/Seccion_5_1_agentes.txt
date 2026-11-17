@@ -1,0 +1,35 @@
+5.1 Entorno de simulación (segunda mitad: motor de agentes)
+Responsable: Bustamante Escobar Jhosselin Sthaicy
+
+Se implementó el motor de movimiento en modulos/agentes.py, separado del entorno, la visualización y el registro de datos. Cada peatón se representa mediante un objeto de la clase Agente con identificador, posición (x, y) en metros, velocidad (vx, vy) en m/s, velocidad deseada, radio, destino y ruta. Los objetos se almacenan en una lista denominada agentes en el programa consumidor. Sus atributos son públicos para permitir que la visualización y la telemetría consulten el mismo estado sin transformaciones. Se agregaron los indicadores activo y llegado y el tiempo de llegada para distinguir a los peatones presentes de quienes ya completaron el recorrido.
+
+El generador permite crear los escenarios de 40, 80 y 120 agentes. Para la entrada configurada en (1, 11), la zona inicial abarca x entre 0,5 y 8 m e y entre 5 y 17 m. Las posiciones se seleccionan sin reemplazo sobre una retícula de 0,60 m, con perturbaciones aleatorias de hasta 0,02 m por eje. Se descartan posiciones cuyo disco invada obstáculos o límites del recinto. Cada radio es de 0,25 m y las velocidades deseadas se sortean uniformemente entre 0,9 y 1,5 m/s. La semilla predeterminada es 42 y se utiliza un generador local de NumPy; con los mismos parámetros se reproduce el estado inicial sin modificar el estado aleatorio global.
+
+El movimiento sigue una versión simplificada de fuerzas sociales, tomando como referencia a Helbing y Molnár (1995), ya incluidos en la bibliografía del informe inicial. La fuerza resultante combina atracción hacia el siguiente objetivo de la ruta, separación entre agentes y repulsión de obstáculos. Con masa unitaria, la fuerza representa una aceleración. La atracción busca aproximar la velocidad actual a la velocidad deseada orientada al objetivo; la separación y la repulsión disminuyen exponencialmente según la distancia libre entre superficies. Sus pesos ko, ks y kr son parámetros independientes que podrán ajustarse durante la calibración del sistema.
+
+Las rutas se obtienen reutilizando el módulo A* de Keyla. El motor asigna una ruta fija inicial únicamente a los agentes que no tienen una, y consume sus puntos conforme avanzan. Se usa una anticipación local de hasta 1,5 m para suavizar el seguimiento, siempre que el segmento sea transitable para el disco completo. El navegador adaptativo puede reemplazar la lista de puntos y el motor comienza a seguir la ruta actualizada en el siguiente paso. La navegación y el diagnóstico conservan sus propias responsabilidades.
+
+La actualización física utiliza un paso de 0,1 s. Primero se limita la aceleración de las fuerzas a 3 m/s² y luego se limita la rapidez a 1,5 m/s, actualizando la posición con la velocidad resultante. Una restricción adicional comprueba el barrido completo del disco frente a los rectángulos de obstáculos y la distancia relativa mínima entre agentes durante el intervalo. Los desplazamientos que producirían una colisión se cancelan. Esta corrección representa un contacto inelástico: puede ocasionar una frenada instantánea superior al límite de aceleración del integrador, distinción que debe considerarse al interpretar las velocidades.
+
+La llegada se define mediante una zona circular de radio 0,50 m alrededor del destino físico. Este parámetro es configurable y evita exigir que todos los discos alcancen un mismo punto exacto. También resuelve la diferencia entre la salida (29, 11) y el centro de la última celda que devuelve A*. Cuando un agente entra en esta zona, se registra su tiempo de llegada, se lo marca como inactivo y se lo retira de las interacciones. El objeto permanece en la lista original para conservar los contadores y el historial.
+
+Tabla: Parámetros iniciales del motor de agentes.
+Parámetro | Valor inicial | Unidad o función
+Cantidad de agentes | 40 / 80 / 120 | Escenarios de demanda
+Radio | 0,25 | m
+Velocidad deseada | 0,9–1,5 | m/s
+Paso físico | 0,1 | s
+Rapidez máxima | 1,5 | m/s
+Aceleración máxima de fuerzas | 3,0 | m/s², antes de restricciones de contacto
+Tiempo de relajación | 0,5 | s
+Pesos ko, ks, kr | 1,0 cada uno | Ajustables; sin calibración experimental
+Tolerancia de waypoint | 0,25 | m
+Zona de llegada | 0,50 | m alrededor del destino
+Semilla de demostración | 42 | Reproducibilidad del estado inicial
+Fuente: elaboración propia a partir de los parámetros implementados.
+
+Se prepararon 15 pruebas automatizadas para verificar la interfaz, la generación reproducible, las fuerzas individuales, los límites cinemáticos en espacio libre, la ausencia de cruces entre discos, la protección de paredes y esquinas, la llegada por ambas rutas, la compatibilidad con el diagnóstico y la sustitución de rutas por el navegador. Una prueba de 120 agentes verifica posiciones, velocidades y separación en cada paso durante 10 s. Otra comprueba que los 40 agentes de la demostración alcanzan la salida en un horizonte de 60 s. También se ejecutaron las pruebas existentes de entorno, navegación y diagnóstico, que continuaron pasando.
+
+Figura: Evolución del motor con 40 agentes y semilla 42, en los instantes 0, 20, 40 y 60 s. Los discos representan el radio físico y el color indica la rapidez. La imagen y la animación se generan mediante demo_agentes.py con rutas A* fijas. Fuente: elaboración propia con Python y Matplotlib.
+
+Estos resultados verifican el funcionamiento del componente, pero no constituyen una comparación A/B ni una calibración del comportamiento peatonal. Las fuerzas y las restricciones de contacto pueden producir bloqueos persistentes en escenarios densos. Se requiere evaluar varios niveles de demanda y semillas, ajustar los parámetros y medir tiempos, espera y finalización durante la integración del grupo. No se implementaron en este módulo la interfaz Pygame, el registro CSV, DBSCAN ni el diagnóstico de congestión.
