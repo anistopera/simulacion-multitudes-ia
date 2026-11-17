@@ -1,0 +1,10 @@
+{
+  "ancho": 30,
+  "alto": 20,
+  "tam_celda": 1,
+  "paso_principal": 2,
+  "paso_alternativo": 3,
+  "entrada": [1, 11],
+  "salida": [29, 11],
+  "obstaculos_extra": []
+}

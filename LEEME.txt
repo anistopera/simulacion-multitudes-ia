@@ -1,0 +1,134 @@
+
+PROYECTO: SIMULACION DE MULTITUDES
+==================================
+
+MODULO 1: MOTOR DEL ESCENARIO
+Responsable: Padilla Alexander
+
+1. DESCRIPCION
+--------------
+Este modulo representa un recinto virtual de
+30 metros de ancho y 20 metros de alto.
+
+Incluye:
+- Barrera central.
+- Paso principal de 2 metros.
+- Ruta alternativa de 3 metros.
+- Entrada en (1, 11).
+- Salida en (29, 11).
+- Obstaculos configurables.
+
+2. TECNOLOGIAS
+--------------
+- Python 3
+- NumPy
+- Matplotlib
+
+3. ARCHIVOS PRINCIPALES
+-----------------------
+modulos/entorno.py:
+Contiene la clase Entorno.
+
+configuracion.json:
+Contiene los parametros del escenario.
+
+main.py:
+Ejecuta el motor y genera el mapa.
+
+capturas/mapa_escenario.png:
+Imagen del escenario.
+
+4. FUNCIONES DISPONIBLES
+------------------------
+Entorno()
+Crea el escenario.
+
+obtener_mapa()
+Devuelve la matriz del escenario.
+
+obtener_celda(x, y)
+Convierte coordenadas a indices de matriz.
+
+es_transitable(x, y)
+Comprueba si una posicion esta libre.
+
+obstaculos()
+Devuelve las celdas ocupadas.
+
+agregar_obstaculo(x, y)
+Agrega un obstaculo.
+
+dibujar_mapa()
+Genera la imagen del escenario.
+
+5. CONVENCIONES
+---------------
+Coordenadas fisicas: (x, y), en metros.
+Indices de matriz: (fila, columna).
+
+Valor 0: celda libre.
+Valor 1: obstaculo.
+
+Tamano de celda: 1 x 1 metro.
+Dimensiones de matriz: 20 x 30.
+
+6. INSTALACION
+--------------
+Abrir una terminal en la carpeta del proyecto.
+
+Ejecutar:
+
+python -m pip install -r requirements.txt
+
+7. EJECUCION
+------------
+Desde la carpeta que contiene main.py:
+
+python main.py
+
+Desde la carpeta exterior:
+
+python -m Simulacion_Congestion.main
+
+8. PRUEBAS
+----------
+Desde la carpeta que contiene main.py:
+
+python pruebas_entorno.py
+
+python prueba_compatibilidad_astar.py
+
+python prueba_dos_rutas.py
+
+Las pruebas verifican:
+- Dimensiones y obstaculos.
+- Compatibilidad basica con A*.
+- Conectividad de ambas rutas.
+
+9. INTEGRACION
+-------------
+Para importar el entorno desde otro modulo
+ejecutado dentro de la carpeta del proyecto:
+
+from modulos.entorno import Entorno
+
+entorno = Entorno()
+
+mapa = entorno.obtener_mapa()
+
+El modulo puede utilizarse en:
+- Movimiento de agentes.
+- Visualizacion con Pygame.
+- Navegacion A*.
+- Diagnostico de congestion.
+
+10. LIMITACIONES
+----------------
+Las pruebas actuales verifican la conectividad
+de las celdas del escenario.
+
+Todavia se debe comprobar el desplazamiento
+de agentes con radio de 0.25 metros y la
+integracion con los demas componentes.
+
+FIN DEL DOCUMENTO

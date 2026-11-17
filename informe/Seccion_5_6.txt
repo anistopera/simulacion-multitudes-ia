@@ -1,0 +1,19 @@
+5.6 Navegación adaptativa
+
+Se implementó el módulo de navegación con el algoritmo A* (Hart, Nilsson y Raphael, 1968) sobre la cuadrícula de 20 × 30 celdas del entorno. La búsqueda admite ocho direcciones de movimiento, sin cortar esquinas de pared, y evalúa f(n) = g(n) + h(n), donde h(n) es la distancia euclidiana al destino. El costo de cada tramo es c(e, t) = L(e)·[1 + α·D(e, t)], donde L(e) es la longitud del tramo, D(e, t) = mín(1; densidad/2,0) es el valor entregado por el diagnóstico de congestión y α ≥ 0 controla cuánto se evita la zona densa. Como la penalización nunca es negativa, la heurística no sobrestima el costo restante y A* devuelve una ruta de costo mínimo; este resultado se comprobó contra un cálculo de referencia independiente. El diagnóstico trabaja con celdas de 2 × 2 m y A* con celdas de 1 × 1 m, por lo que cada celda de A* toma el valor D de la celda de 2 × 2 m que la contiene.
+
+El módulo ofrece dos modos. En el modo A, cada agente recibe una sola vez el camino más corto (D = 0) y no lo modifica. En el modo B, el costo se recalcula con el D(e, t) vigente y el agente puede cambiar de ruta. Para evitar oscilaciones se aplican dos reglas: un intervalo mínimo τ entre recálculos de un mismo agente y una mejora mínima, de modo que la ruta nueva solo se acepta si su costo es menor que el de la ruta actual en al menos el margen fijado. Si A* no encuentra una alternativa viable, el agente conserva su ruta. Los valores iniciales se muestran en la Tabla 1; son puntos de partida dentro de los rangos del marco referencial, no resultados calibrados.
+
+Tabla: Parámetros iniciales de la navegación adaptativa.
+Parámetro | Valor inicial | Función
+α | 2,0 (rango 0–5) | Peso de la congestión; se calibrará con PSO
+τ | 4 s (rango 2–6 s) | Intervalo mínimo entre recálculos por agente
+Margen de mejora | 10 % | Reducción mínima de costo para aceptar una ruta nueva
+
+Se dejó además un esbozo de optimización por enjambre de partículas (Kennedy y Eberhart, 1995) para calibrar θ = [α, k_s, k_r] con la función J definida en el marco teórico. Su optimizador funciona con una función de prueba, pero todavía no está conectado a la simulación completa, por lo que no se reportan valores calibrados.
+
+Para ilustrar el comportamiento se usó un mapa de densidad sintético, con una cola frente al paso principal, porque la simulación integrada aún no estaba disponible. Sin congestión, ambos modos eligen la misma ruta de 28,0 m por el paso principal. Con congestión, la ruta fija del modo A mantiene los 28,0 m pero su costo adaptativo sube a 40,8, mientras que el modo B se desvía por la ruta alternativa (32,1 m, costo 32,1), un costo 21 % menor. En una prueba de decisión de 60 s, con un agente detenido y una congestión que oscila alrededor del punto de cambio, el modo B sin reglas anti-oscilación cambió de ruta 21 veces; con τ = 4 s y margen de 10 % no cambió ninguna vez (Figura). Estos resultados muestran que el algoritmo funciona según lo diseñado, pero no miden su efecto sobre el flujo real de agentes, que se evaluará en las pruebas de la sección 5.9.
+
+Como limitación, las rutas siguen los centros de las celdas de 1 m, por lo que A* no modela el radio de 0,25 m de los agentes ni evita por sí solo los choques entre ellos; de eso se encarga el módulo de movimiento.
+
+Figura: Comparación de rutas del modo A y del modo B. (a) Sin congestión. (b) Con densidad sintética. (c) Cambios de ruta acumulados con y sin reglas anti-oscilación. Fuente: elaboración propia con Python y Matplotlib.

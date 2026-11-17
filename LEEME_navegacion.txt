@@ -1,0 +1,51 @@
+MODULO 7: NAVEGACION ADAPTATIVA (A*)
+Responsable: Orellana Castro Keyla
+
+ARCHIVOS NUEVOS (no se modificó nada del entorno)
+-------------------------------------------------
+modulos/navegacion_astar.py     A* + clase NavegadorAdaptativo (modo A y B)
+modulos/optimizacion_pso.py     Esbozo de PSO (no integrado)
+demo_navegacion.py              Genera capturas/comparacion_rutas_A_vs_B.png
+pruebas_navegacion.py           11 pruebas
+informe/Seccion_5_6.txt         Texto para el informe
+
+EJECUCION (desde la carpeta que contiene main.py)
+-------------------------------------------------
+python -m pip install -r requirements.txt
+python demo_navegacion.py          (muestra la figura y la guarda en capturas/)
+python pruebas_navegacion.py       (debe terminar con "TODAS LAS PRUEBAS ... EXITOSAS")
+
+USO DESDE EL PROGRAMA PRINCIPAL
+-------------------------------
+from modulos.entorno import Entorno
+from modulos.navegacion_astar import NavegadorAdaptativo
+
+entorno = Entorno(configuracion="configuracion.json")
+nav = NavegadorAdaptativo(entorno, modo="B")     # "A" = ruta fija
+
+# Al crear los agentes (cada uno: dict u objeto con id, x, y, destino, ruta):
+for ag in agentes:
+    nav.asignar_ruta_inicial(ag, t=0.0)
+
+# Una vez por segundo, despues del diagnostico (D: matriz 10 x 15, valores 0-1):
+nav.actualizar_todos(agentes, t, D)
+
+Contrato con los demas modulos
+- agente['ruta'] queda como lista de waypoints (x, y) en metros (centros de celda).
+  El reparto no fija este formato; si Jhosselin usa otro, cambiar celdas_a_waypoints().
+- D es la matriz del diagnostico por celdas de 2x2 m, forma (alto/2, ancho/2) = (10, 15),
+  con D = min(1; densidad/2,0). Si Santiago entrega otra forma, avisar.
+- Si el agente no tiene 'destino', se usa entorno.destino (la salida).
+
+PARAMETROS (decision inicial, a calibrar)
+-----------------------------------------
+alpha = 2,0   (rango del informe: 0-5; lo calibrara el PSO)
+tau = 4 s     (rango del informe: 2-6 s)
+margen = 10 % (el informe no da valor)
+Se cambian al crear el navegador: NavegadorAdaptativo(entorno, "B", alpha=3, tau=3, margen=0.15)
+
+LIMITACIONES
+------------
+- La comparacion A vs B se hizo con un mapa de densidad sintetico, no con la simulacion integrada.
+- A* sigue centros de celda de 1 m: no modela el radio del agente ni choques entre agentes.
+- El PSO es un esbozo: falta conectar evaluar(theta) a la simulacion completa.

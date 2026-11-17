@@ -1,0 +1,9 @@
+5.1 Entorno de simulación (primera mitad)
+
+Se implementó un recinto virtual bidimensional de 30 × 20 metros con una barrera central, una entrada a la izquierda y una salida común a la derecha. El paso principal tiene 2 metros de ancho y está próximo a la línea directa entre la entrada y la salida. La ruta alternativa dispone de un paso de 3 metros, pero requiere un desvío.
+
+El mapa se representa mediante una matriz NumPy de 20 filas y 30 columnas, con celdas de 1 × 1 metro. El valor 0 indica espacio libre y el valor 1 representa un obstáculo. La clase Entorno permite consultar posiciones transitables, convertir coordenadas a celdas y obtener la lista de obstáculos. También permite configurar dimensiones, anchos de pasos y obstáculos adicionales mediante un archivo JSON.
+
+La representación sirve como base para el movimiento de agentes y para la búsqueda de rutas A*. La densidad se calculará posteriormente en celdas de 2 × 2 metros. El radio de los agentes deberá considerarse en el módulo de movimiento para evitar atravesar obstáculos.
+
+Figura: Mapa del entorno de simulación. Fuente: elaboración propia con Python y Matplotlib.
