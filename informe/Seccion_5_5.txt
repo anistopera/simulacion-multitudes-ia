@@ -1,0 +1,31 @@
+5.5 Diagnóstico de zonas
+
+El módulo de diagnóstico de congestión procesa periódicamente la posición y velocidad de los agentes para determinar el estado de transitabilidad de los distintos sectores del recinto. Se basa en el principio operativo de que una alta concentración espacial no constituye necesariamente un atasco: una multitud compacta que avanza a velocidad nominal representa un flujo libre de alta demanda, mientras que un grupo detenido o ralentizado frente a un paso estrecho constituye un cuello de botella real. Para capturar esta distinción, el diagnóstico combina la densidad local, la velocidad media y una condición de persistencia temporal, evitando reacciones prematuras ante frenadas o fluctuaciones momentáneas.
+
+El espacio continuo del recinto (30 × 20 m) se discretiza en una cuadrícula de celdas de 2 × 2 m, generando una matriz de 10 filas por 15 columnas (150 sectores de análisis). En cada celda z, el área útil A(z) se calcula descontando las subceldas bloqueadas por paredes u obstáculos del entorno a partir de la cuadrícula base de 1 × 1 m; en celdas completamente libres, A(z) = 4,0 m². Cada segundo (Δt = 1,0 s), el módulo contabiliza los N(z, t) agentes ubicados en la celda y calcula:
+
+1. Densidad espacial: ρ(z, t) = N(z, t) / A(z) [agentes/m²].
+2. Velocidad media local: v̄(z, t) = (1 / N(z, t)) · Σ ‖vᵢ(t)‖ [m/s].
+
+Cada celda se clasifica en uno de tres estados mediante reglas deterministas:
+- Flujo libre: densidad inferior a 1,5 agentes/m². El tránsito fluye sin restricciones significativas.
+- Acumulación: densidad mayor o igual a 1,5 agentes/m² pero con velocidad media superior al 50 % de la deseada, o bien con velocidad reducida que aún no ha alcanzado la persistencia mínima requerida.
+- Congestión crítica: densidad mayor o igual a 2,0 agentes/m² y velocidad media reducida al 50 % o menos de la velocidad deseada de referencia, sostenida de forma ininterrumpida durante al menos 3,0 segundos.
+
+A partir de esta evaluación, se genera la matriz de costo normalizada D(e, t) = mín(1; densidad / 2,0), cuyos valores acotados en el intervalo [0, 1] son entregados al módulo de navegación adaptativa (A*) para modular el costo de los tramos de desplazamiento. Los parámetros y umbrales operativos se detallan en la Tabla 1.
+
+Tabla: Umbrales y parámetros operativos del diagnóstico de congestión.
+Parámetro / Variable | Valor operativo | Criterio y justificación
+Tamaño de celda | 2,0 m × 2,0 m (4,0 m²) | Unidad espacial que equilibra resolución de cuello de botella y costo computacional
+Dimensiones de matriz | 10 filas × 15 columnas | Cobertura completa del recinto de 30 × 20 m
+Umbral de alerta (acumulación) | densidad ≥ 1,5 agentes/m² | Indica densidad elevada sin inferir bloqueo físico
+Umbral de densidad crítica | densidad ≥ 2,0 agentes/m² | Límite a partir del cual el espacio interpersonal restringe severamente el paso
+Reducción crítica de velocidad | v̄ ≤ 50 % de v_deseada | Distingue movimiento continuo de detención forzada
+Persistencia temporal mínima | 3,0 segundos continuos | Filtra desaceleraciones transitorias y desacopla ruido estocástico
+Costo de tramo D(e, t) | mín(1; densidad / 2,0) | Función de penalización continua [0, 1] para la re-planificación con A*
+
+Para verificar la capacidad del modelo de provocar y diagnosticar congestiones severas, se evaluó el escenario S3 con 120 agentes convergiendo hacia el paso principal (ancho de 2,0 m). La simulación cinemática evidenció la formación progresiva de un embudo frente a la barrera en x = 15 m: a los 5,0 s se registraron 6 celdas en acumulación; a partir de los 6,0 s la densidad en la celda adyacente al paso superó el umbral crítico (alcanzando un pico de 29,25 agentes/m²) con velocidad promedio inferior a 0,15 m/s durante más de 3,0 s continuos, activando el estado de congestión crítica (Figura). Esto confirmó empíricamente que la configuración de 120 agentes y paso de 2,0 m es plenamente suficiente para inducir cuellos de botella sostenidos, sin requerir modificaciones en la geometría del recinto ni aumentos forzados de demanda.
+
+Como limitación, la discretización en celdas rígidas de 2 × 2 m puede asignar a celdas contiguas a agentes separados únicamente por los bordes de la cuadrícula; no obstante, la matriz D(e, t) suavizada y su expansión a la cuadrícula de A* atenúan el impacto de este efecto en las decisiones de enrutamiento.
+
+Figura: Diagnóstico de congestión y señal de costo. (a) Clasificación de zonas en estados Libre, Acumulación y Crítica con 120 agentes frente al paso principal de 2 m. (b) Matriz de penalización continua D(e, t) entregada al planificador A*. Fuente: elaboración propia con Python y Matplotlib.

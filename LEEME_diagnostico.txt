@@ -1,0 +1,45 @@
+MODULO 6: DIAGNÓSTICO DE CONGESTIÓN
+Responsable: Lora Quilla Santiago Leonardo
+
+ARCHIVOS DEL MÓDULO
+-------------------
+modulos/diagnostico.py         Clase DiagnosticoCongestion (cálculo de densidad, velocidad, persistencia y D)
+demo_diagnostico.py            Script de demostración y verificación con 120 agentes (genera capturas)
+pruebas_diagnostico.py         9 pruebas unitarias y de compatibilidad con A*
+capturas/zonas_diagnostico.png Captura de referencia de estados (Libre, Acumulación, Crítica) y matriz D
+capturas/diagnostico_120_agentes.png Captura de la verificación con 120 agentes frente al paso de 2 m
+informe/Seccion_5_5.txt        Texto listo para la sección 5.5 del informe impreso
+
+EJECUCIÓN
+---------
+py pruebas_diagnostico.py      (debe terminar con "[EXITO] TODAS LAS PRUEBAS UNITARIAS PASARON (9/9)")
+py demo_diagnostico.py         (muestra las ventanas y guarda las imágenes en capturas/)
+py demo_diagnostico.py --no-mostrar   (modo silencioso sin abrir ventanas)
+
+USO DESDE EL PROGRAMA PRINCIPAL
+-------------------------------
+from modulos.entorno import Entorno
+from modulos.diagnostico import DiagnosticoCongestion
+
+entorno = Entorno(configuracion="configuracion.json")
+diag = DiagnosticoCongestion(entorno=entorno)
+
+# En cada ciclo de simulación o cada segundo:
+estados, D = diag.actualizar(agentes, dt=1.0)
+
+# D es la matriz (10, 15) que consume el navegador A* de Keyla:
+nav.actualizar_todos(agentes, t, D)
+
+CONTRATO CON LOS DEMÁS MÓDULOS
+------------------------------
+- Entrada: lista de agentes (dicts, objetos con x, y, vx, vy, v_deseada o tuplas de telemetría).
+- Salida para Keyla (A*): Matriz D de forma (10, 15), con valores entre 0.0 y 1.0 (D = min(1, dens/2.0)).
+- Salida para Wendy (Visualización): Matriz de estados con cadenas ('libre', 'acumulacion', 'critica')
+  o diag.estados_codigo (-1: obstáculo, 0: libre, 1: acumulación, 2: crítica).
+
+RESULTADO DE LA VERIFICACIÓN CON 120 AGENTES
+--------------------------------------------
+- Densidad pico: 29.25 ag/m² frente al paso principal de 2 m.
+- Velocidad media: se reduce a < 0.15 m/s.
+- Primera celda crítica a los 6.0 segundos (superando los 3 s de persistencia requeridos).
+- Conclusión: Se confirma empíricamente la aparición de congestión crítica sin modificar el escenario.
