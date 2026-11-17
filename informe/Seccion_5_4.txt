@@ -1,6 +1,6 @@
 5.4 Detección con DBSCAN
 
-Este módulo detecta en qué lugares del recinto se concentran los agentes. Recibe las posiciones [x, y] de los agentes activos en un instante, expresadas en metros y tomadas de la telemetría (5.3) o directamente del motor de agentes (5.2), y devuelve para cada agente una etiqueta de grupo (o −1 si es ruido) y, para cada grupo, su tamaño y su centro. Se ejecuta cada 1 s de simulación. Su resultado es la entrada del diagnóstico de zonas (5.5), que decide si una concentración es realmente una congestión.
+Este módulo detecta en qué lugares del recinto se concentran los agentes. Recibe las posiciones [x, y] de los agentes activos en un instante, expresadas en metros y tomadas de la telemetría (5.3) o directamente del motor de agentes (5.1), y devuelve para cada agente una etiqueta de grupo (o −1 si es ruido) y, para cada grupo, su tamaño y su centro. Se ejecuta cada 1 s de simulación. DBSCAN aporta el análisis estructural de agrupamientos y ruido. DiagnosticoCongestion (5.5) evalúa directamente la densidad, velocidad y persistencia sobre los agentes activos; no recibe las etiquetas de DBSCAN como entrada de sus reglas. Ambos componentes observan el mismo estado y sus resultados son complementarios.
 
 Un grupo detectado indica que hay agentes juntos, pero no que estén detenidos. Por eso este módulo no clasifica la congestión: solo localiza concentraciones. La clasificación en flujo libre, acumulación o congestión crítica se hace en 5.5 con la densidad, la velocidad y la persistencia. El módulo usa únicamente coordenadas físicas (x, y) en metros, como el motor del escenario (5.1); no consulta la matriz del mapa, que se indexa como [fila, columna].
 
@@ -21,7 +21,7 @@ El código está en el archivo modulos/dbscan_deteccion.py y expone las siguient
 - calibrar(instantes, eps_lista, minpts_lista): prueba todas las combinaciones de ε y min_samples sobre una lista de instantes y devuelve el promedio de grupos, de ruido y de calidad.
 - cargar_instantes_csv(ruta): lee un CSV con las columnas t, x e y (por ejemplo, el de telemetría) y devuelve un arreglo [x, y] por cada segundo.
 
-La calibración se hizo con las posiciones generadas por el motor de agentes (5.2) en los tres escenarios de carga: S1 con 40 agentes, S2 con 80 y S3 con 120. Se simularon 60 s con la ruta fija (sin adaptación) y las semillas 42, 43 y 44, y se guardó la posición de los agentes activos cada 1 s. Los agentes que ya llegaron a la salida no se incluyen. En total se analizaron 128 instantes de S1, 180 de S2 y 180 de S3 (en S1 hay menos porque en dos de las tres semillas todos los agentes llegaron antes de los 60 s). Estos datos aún no pasan por el módulo de telemetría; cuando exista su CSV, la misma calibración se puede repetir sin cambios de código.
+La calibración se hizo con las posiciones generadas por el motor de agentes (5.1) en los tres escenarios de carga: S1 con 40 agentes, S2 con 80 y S3 con 120. Se simularon 60 s con la ruta fija (sin adaptación) y las semillas 42, 43 y 44, y se guardó la posición de los agentes activos cada 1 s. Los agentes que ya llegaron a la salida no se incluyen. En total se analizaron 128 instantes de S1, 180 de S2 y 180 de S3 (en S1 hay menos porque en dos de las tres semillas todos los agentes llegaron antes de los 60 s). Esta calibración histórica utilizó una exportación recortada de posiciones, anterior a la integración de Telemetria. El ciclo actual registra el CSV completo de la sección 5.3 y permite repetir la calibración mediante cargar_instantes_csv, sin confundir estos datos de 60 s con la batería de 180 s de la sección 5.9.
 
 Se probaron los valores ε ∈ {0,8; 1,0; 1,2; 1,5; 2,0} m y min_samples ∈ {3, …, 8} (30 combinaciones por escenario). Las tablas 5.4-2 a 5.4-4 muestran el número promedio de grupos y el porcentaje promedio de ruido.
 
@@ -51,15 +51,15 @@ Tabla 5.4-4: Grupos promedio / porcentaje de ruido, S3 (120 agentes).
 
 Con los valores iniciales (ε = 1,2 m, min_samples = 5), el módulo detectó en promedio 1,4 grupos en S1, 1,4 en S2 y 1,3 en S3, con 32 %, 4 % y 3 % de ruido. En todos los casos hay un grupo principal que contiene casi todos los agentes y, a veces, un grupo pequeño de agentes que ya cruzaron. La Figura 5.4-1 muestra un instante de S3 (t = 20 s): un grupo de 92 agentes frente al paso principal, con su centro en (12,1; 11,3) m, y un grupo de 5 agentes ya del otro lado.
 
-Figura 5.4-1: Grupos detectados en S3 (120 agentes) a los 20 s, semilla 42. Archivo: capturas_dbscan/fig_clusters_120.png. Fuente: elaboración propia con Python y Matplotlib.
+Figura 5.4-1: Grupos detectados en S3 (120 agentes) a los 20 s, semilla 42. Archivo: capturas/fig_clusters_120.png. Fuente: elaboración propia con Python y Matplotlib.
 
 La Figura 5.4-2 sigue el mismo escenario en el tiempo. Al inicio (t = 1 s) los agentes están separados por unos 0,6 m en la zona de entrada, y DBSCAN los reúne en un solo grupo de 118 agentes aunque todos se mueven con fluidez. Esto muestra con datos reales que un grupo no equivale a una congestión. Hacia los 10 s el grupo se desplaza a la barrera y a los 60 s quedan 60 agentes frente al paso principal.
 
-Figura 5.4-2: Evolución de los grupos en S3 (semilla 42) a los 1, 10, 20 y 60 s. Archivo: capturas_dbscan/fig_evolucion_S3.png. Fuente: elaboración propia con Python y Matplotlib.
+Figura 5.4-2: Evolución de los grupos en S3 (semilla 42) a los 1, 10, 20 y 60 s. Archivo: capturas/fig_evolucion_S3.png. Fuente: elaboración propia con Python y Matplotlib.
 
 La Figura 5.4-3 muestra el tamaño del grupo principal y la velocidad media de sus miembros. En S1 el grupo se forma (hasta 35 agentes), se disuelve y su velocidad vuelve a 1,2 m/s, es decir, el flujo se recupera. En S2 y S3 el grupo principal se reduce hasta 60 agentes y se queda en ese tamaño, con velocidad media casi nula (cerca de 0,00 m/s en S2 desde los 30 s y 0,02 m/s en S3 a los 60 s). Un mismo grupo puede ser flujo o bloqueo, y solo la velocidad lo distingue.
 
-Figura 5.4-3: Tamaño del grupo principal y velocidad media de sus miembros (semilla 42). Archivo: capturas_dbscan/fig_grupo_principal_tiempo.png. Fuente: elaboración propia con Python y Matplotlib.
+Figura 5.4-3: Tamaño del grupo principal y velocidad media de sus miembros (semilla 42). Archivo: capturas/fig_grupo_principal_tiempo.png. Fuente: elaboración propia con Python y Matplotlib.
 
 Observaciones sobre la calibración:
 
@@ -67,9 +67,9 @@ Observaciones sobre la calibración:
 - Efecto de min_samples. Con ε = 1,2 m en S3, subir min_samples de 3 a 8 aumenta el ruido de 0,5 % a 11 % y el Silhouette baja de 0,74 a 0,46. Valores bajos (3 o 4) aceptan grupos de muy pocos agentes, que pueden ser coincidencias.
 - Silhouette. Crece con ε (de 0,32 con 0,8 m a 0,75 con 2,0 m en S3), pero eso se debe a que quedan menos grupos y más grandes, no a que la detección sea mejor para el objetivo del proyecto. Por eso no se usó como único criterio.
 
-Figura 5.4-4: Efecto de ε sobre el mismo instante de S3 (t = 20 s, min_samples = 5). Archivo: capturas_dbscan/fig_efecto_eps.png. Fuente: elaboración propia con Python y Matplotlib.
+Figura 5.4-4: Efecto de ε sobre el mismo instante de S3 (t = 20 s, min_samples = 5). Archivo: capturas/fig_efecto_eps.png. Fuente: elaboración propia con Python y Matplotlib.
 
-Con los valores iniciales, el Silhouette promedio fue 0,60 en S1, 0,58 en S2 y 0,67 en S3, y el índice Davies–Bouldin 0,49, 0,48 y 0,37. Se calcularon únicamente en los instantes con al menos dos grupos (46 de 128 en S1, 48 de 180 en S2 y 51 de 180 en S3). Los valores indican grupos moderadamente separados, pero describen la forma geométrica y no si el grupo está bloqueado. La tabla completa con ambos índices está en capturas_dbscan/calibracion_dbscan.csv.
+Con los valores iniciales, el Silhouette promedio fue 0,60 en S1, 0,58 en S2 y 0,67 en S3, y el índice Davies–Bouldin 0,49, 0,48 y 0,37. Se calcularon únicamente en los instantes con al menos dos grupos (46 de 128 en S1, 48 de 180 en S2 y 51 de 180 en S3). Los valores indican grupos moderadamente separados, pero describen la forma geométrica y no si el grupo está bloqueado. La tabla completa con ambos índices está en capturas/calibracion_dbscan.csv.
 
 Se mantienen ε = 1,2 m y min_samples = 5. Con estos valores el ruido es bajo en S2 y S3 (menos de 4 %; en S1 sube a 32 %, esperable con pocos agentes dispersos), se evita que el grupo principal crezca incorporando agentes dispersos y se conserva el criterio del planteamiento (5 agentes como mínimo). Se descartaron ε = 0,8 m por el ruido y ε = 2,0 m por la fusión de grupos.
 

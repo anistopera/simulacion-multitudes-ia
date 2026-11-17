@@ -2,6 +2,7 @@
 
 Ejemplos desde la raíz:
     python main.py --modo B --agentes 120 --semilla 42
+    python main.py --modo B --agentes 40 --semilla 42 --visualizar
     python main.py --experimentos
 """
 
@@ -43,13 +44,24 @@ def guardar_csv(ruta, filas):
         escritor.writerows(filas)
 
 
+def _crear_visualizacion(entorno, carpeta_capturas, modo):
+    # Importación diferida: las corridas sin interfaz no requieren SDL/Pygame.
+    import pygame
+    from modulos.visualizacion import Visualizacion
+
+    return (Visualizacion(entorno, carpeta_capturas=carpeta_capturas,
+                          titulo=f'Multitudes: modo {modo}'), pygame.time.Clock())
+
+
 def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
-                     duracion=HORIZONTE, carpeta_salida=CAPTURAS):
+                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False):
     """Ejecuta un episodio nuevo; duracion permite pruebas cortas desde Python.
 
     El CLI experimental siempre usa 180 s. Los no llegados se penalizan con
     ese horizonte. El cierre anticipado registra las últimas llegadas incluso
-    si no coincide con un segundo entero, sin duplicar muestras.
+    si no coincide con un segundo entero, sin duplicar muestras. Una corrida
+    visual cerrada por el usuario se marca interrumpida y calcula métricas
+    al corte real; sus archivos usan el sufijo _visual y no sustituyen el lote.
     """
     modo = str(modo).upper()
     if modo not in ('A', 'B') or n_agentes not in ESCENARIOS.values():
@@ -72,35 +84,58 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
     analisis = []
     max_criticas = 0
     ultimo_tick_registrado = 0
+    ticks_ejecutados = 0
+    interrumpido = False
+    vis = None
+    if visualizar:
+        vis, reloj = _crear_visualizacion(entorno, carpeta_salida, modo)
+    try:
+        if vis is not None:
+            # Calor inicial válido sin acumular persistencia ni avanzar la física.
+            diagnostico.actualizar(motor.agentes_activos, dt=0.0)
+        for tick in range(1, ticks + 1):
+            if vis is not None and not vis.procesar_eventos():
+                interrumpido = True
+                break
+            activos = motor.actualizar(dt=DT)
+            ticks_ejecutados = tick
+            if tick % 10 == 0:
+                telemetria.registrar(motor.tiempo, agentes, dt_muestreo=1.0)
+                ultimo_tick_registrado = tick
+                pos_np = telemetria.obtener_posiciones_np(activos)
+                etiquetas, clusters = detectar_grupos(pos_np)
+                estados, D = diagnostico.actualizar(activos, dt=1.0)
+                criticas = int(np.count_nonzero(estados == ESTADO_CRITICA))
+                max_criticas = max(max_criticas, criticas)
+                cambios = nav.actualizar_todos(activos, motor.tiempo, D) if modo == 'B' else 0
+                analisis.append({
+                    't': motor.tiempo, 'activos': len(activos), 'clusters': len(clusters),
+                    'agentes_ruido': int(np.count_nonzero(etiquetas == -1)),
+                    'grupo_mayor': max((c['tamano'] for c in clusters), default=0),
+                    'celdas_criticas': criticas,
+                    'densidad_maxima': float(diagnostico.densidad.max()),
+                    'cambios_ruta_instante': cambios, 'cambios_ruta_acumulados': nav.cambios,
+                })
+            if vis is not None:
+                total_llegados = sum(a.llegado for a in agentes)
+                vis.dibujar(activos, motor.tiempo, llegados=total_llegados,
+                            densidad=diagnostico.densidad)
+                reloj.tick(round(1 / DT))
+            if not activos:
+                break
+    finally:
+        if vis is not None:
+            vis.cerrar()
 
-    for tick in range(1, ticks + 1):
-        activos = motor.actualizar(dt=DT)
-        if tick % 10 == 0:
-            telemetria.registrar(motor.tiempo, agentes, dt_muestreo=1.0)
-            ultimo_tick_registrado = tick
-            pos_np = telemetria.obtener_posiciones_np(activos)
-            etiquetas, clusters = detectar_grupos(pos_np)
-            estados, D = diagnostico.actualizar(activos, dt=1.0)
-            criticas = int(np.count_nonzero(estados == ESTADO_CRITICA))
-            max_criticas = max(max_criticas, criticas)
-            cambios = nav.actualizar_todos(activos, motor.tiempo, D) if modo == 'B' else 0
-            analisis.append({
-                't': motor.tiempo, 'activos': len(activos), 'clusters': len(clusters),
-                'agentes_ruido': int(np.count_nonzero(etiquetas == -1)),
-                'grupo_mayor': max((c['tamano'] for c in clusters), default=0),
-                'celdas_criticas': criticas,
-                'densidad_maxima': float(diagnostico.densidad.max()),
-                'cambios_ruta_instante': cambios, 'cambios_ruta_acumulados': nav.cambios,
-            })
-        if not activos:
-            break
-
-    if tick != ultimo_tick_registrado:
+    if ticks_ejecutados != ultimo_tick_registrado:
         telemetria.registrar(motor.tiempo, agentes,
-                            dt_muestreo=(tick - ultimo_tick_registrado) * DT)
-    metricas = telemetria.obtener_metricas_episodio(n_agentes, duracion)
+                            dt_muestreo=(ticks_ejecutados - ultimo_tick_registrado) * DT)
+    corte_metricas = motor.tiempo if interrumpido else duracion
+    metricas = telemetria.obtener_metricas_episodio(n_agentes, corte_metricas)
     escenario = next(e for e, n in ESCENARIOS.items() if n == n_agentes)
     nombre = f'{escenario}_{modo}_semilla{semilla}'
+    if visualizar:
+        nombre += '_visual'
     carpeta_salida = Path(carpeta_salida)
     ruta_telemetria = Path('experimentos') / f'{nombre}_telemetria.csv'
     ruta_analisis = Path('experimentos') / f'{nombre}_analisis.csv'
@@ -109,7 +144,8 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
         guardar_csv(carpeta_salida / ruta_analisis, analisis)
     return {
         'escenario': escenario, 'n_agentes': n_agentes, 'modo': modo, 'semilla': semilla,
-        'horizonte_s': duracion, 'duracion_simulada_s': tick * DT, 'ticks': tick,
+        'horizonte_s': duracion, 'duracion_simulada_s': ticks_ejecutados * DT,
+        'ticks': ticks_ejecutados, 'interrumpido': interrumpido,
         **metricas, 'tasa_finalizacion_pct': 100.0 * metricas['tasa_finalizacion'],
         'celdas_criticas_max': max_criticas, 'cambios_ruta': nav.cambios,
         'recalculos_astar': nav.recalculos, 'muestras_analisis': len(analisis),
@@ -211,7 +247,9 @@ def ejecutar_experimentos(carpeta_salida=CAPTURAS):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--experimentos', action='store_true', help='Ejecutar S1/S2/S3, A/B y semillas 42/43/44 (18 episodios)')
+    ejecucion = parser.add_mutually_exclusive_group()
+    ejecucion.add_argument('--experimentos', action='store_true', help='Ejecutar S1/S2/S3, A/B y semillas 42/43/44 (18 episodios)')
+    ejecucion.add_argument('--visualizar', action='store_true', help='Mostrar la corrida individual con Pygame: H calor, S captura, Esc cerrar')
     parser.add_argument('--modo', choices=('A', 'B'), default='A')
     parser.add_argument('--agentes', type=int, choices=(40, 80, 120), default=40)
     parser.add_argument('--semilla', type=int, default=42)
@@ -226,8 +264,12 @@ def main(argv=None):
         ejecutar_experimentos()
         print('18 episodios terminados. Resultados, tabla y figura en:', CAPTURAS)
     else:
-        resultado = ejecutar_episodio(args.agentes, args.modo, args.semilla)
-        guardar_csv(CAPTURAS / f"resultado_{resultado['escenario']}_{args.modo}_semilla{args.semilla}.csv", [resultado])
+        if args.visualizar:
+            resultado = ejecutar_episodio(args.agentes, args.modo, args.semilla, visualizar=True)
+        else:
+            resultado = ejecutar_episodio(args.agentes, args.modo, args.semilla)
+        sufijo = '_visual' if args.visualizar else ''
+        guardar_csv(CAPTURAS / f"resultado_{resultado['escenario']}_{args.modo}_semilla{args.semilla}{sufijo}.csv", [resultado])
         for clave, valor in resultado.items():
             print(f'{clave}: {valor}')
 

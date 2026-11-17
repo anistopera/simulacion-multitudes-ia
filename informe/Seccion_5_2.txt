@@ -1,0 +1,30 @@
+5.2 Interfaz y visualización
+Responsable: Choque Aguilar Wendy
+
+El módulo modulos/visualizacion.py implementa la clase Visualizacion como una vista de solo lectura del estado de la simulación. La ventana utiliza Pygame, mediante la distribución pygame-ce en el entorno de Python 3.14, y representa el recinto, paredes, agentes, entrada y salida. La vista no calcula fuerzas, modifica rutas ni avanza el tiempo físico; recibe los datos del motor externo y construye instantáneas AgenteVisual para conservar esa separación de responsabilidades.
+
+La geometría se expresa en metros con origen (0, 0) en la esquina inferior izquierda. La escala predeterminada es de 28 píxeles por metro y puede configurarse al construir la vista, con un mínimo de 4 píxeles por metro. La transformación a pantalla multiplica x por la escala e invierte el eje vertical para ajustarse al origen superior izquierdo de Pygame. Se utilizan márgenes de 32 píxeles y un panel lateral de 340 píxeles. Para el recinto de 30 x 20 m y la escala predeterminada, la ventana mide 1244 x 624 píxeles. El radio dibujado corresponde al radio físico de cada agente multiplicado por la escala.
+
+La codificación de color de los agentes representa la rapidez relativa q = hypot(vx, vy) / v_deseada. Un agente detenido se muestra en rojo; q=0,5 corresponde a amarillo y q>=1 a verde, con una transición continua entre esos valores. Si la velocidad deseada es cero, el color es gris para evitar un cociente indefinido. Los agentes inactivos o llegados no se dibujan. Estos colores indican movimiento relativo, no la etiqueta de un clúster DBSCAN. Las paredes se representan en gris oscuro, la entrada en azul y la salida en violeta.
+
+El mapa de calor muestra densidad en personas/m² sobre celdas de 2 x 2 m, con matriz de forma (10, 15) e índices [fila, columna]; la fila cero corresponde al borde inferior. La tecla H alterna su visibilidad. La escala cromática va de tonos claros para densidad cero a rojo para 4 o más personas/m². Se dibuja debajo de paredes y agentes, de forma que la geometría y los peatones sigan siendo visibles. El color saturado no implica por sí solo un estado crítico: la clasificación del diagnóstico también requiere velocidad y persistencia temporal.
+
+El método dibujar(agentes, tiempo_simulado, llegados=None, densidad=None) acepta la lista activa del motor, su tiempo simulado y un contador externo de llegadas. En la integración con main.py se proporciona diagnostico.densidad, cuyo cálculo descuenta obstáculos del área útil. No se entrega la matriz normalizada D ni la matriz de cadenas de estados, pues sus unidades y significado son diferentes. Si no se suministra densidad, la vista puede contar los activos por celda y dividir por el área geométrica de cada celda; esa alternativa puede diferir del diagnóstico cerca de paredes. La matriz recibida se valida en forma, finitud y no negatividad.
+
+Tabla 5.2-1. Controles y elementos de la interfaz.
+Control o elemento | Función
+H | Mostrar u ocultar el mapa de calor
+S | Guardar el siguiente cuadro como PNG en capturas/, con nombre temporal único
+Esc o cierre de ventana | Solicitar la detención de la corrida visual
+Panel: Activos | Número de agentes aún presentes
+Panel: Llegados | Total acumulado de llegadas, proporcionado por el motor
+Panel: Tiempo simulado | Segundos avanzados por el motor, independientemente del tiempo real
+Leyendas | Escala de velocidad relativa, densidad, entrada y salida
+
+main.py habilita la interfaz mediante python main.py --modo B --agentes 40 --semilla 42 --visualizar. En cada tick consulta procesar_eventos(); si devuelve False, detiene la simulación. Tras el paso físico y el análisis que corresponda, dibuja los activos y actualiza los contadores. La presentación se limita a 10 cuadros por segundo; la física conserva dt=0,1 s y el diagnóstico mantiene su cadencia de 1,0 s. La densidad inicial se calcula con dt=0 para no acumular persistencia antes de avanzar la simulación. Entre análisis se conserva el último mapa de densidad disponible.
+
+Al cerrar la ventana se liberan los recursos gráficos, incluso si se produce una excepción durante el dibujo. Las corridas interrumpidas se identifican en los resultados y sus métricas corresponden al corte real observado. Sus CSV utilizan el sufijo _visual para conservar los resultados de los experimentos por lotes. --visualizar corresponde a una corrida individual; --experimentos conserva el protocolo no interactivo de los 18 episodios.
+
+Figura 5.2-1. Vista integrada del motor de agentes con rutas A* fijas a los 10,0 s: 40 agentes activos, ninguna llegada y mapa de calor activado. Archivo: capturas/visualizacion_integrada.png. Fuente: elaboración del equipo mediante la demo de visualización. Esta imagen documenta la interfaz y una ejecución de referencia; no constituye por sí sola una comparación experimental entre modos A y B.
+
+La verificación del componente incluye controles de teclado, colores, orientación de coordenadas, validación de la matriz de densidad y exportación de capturas. La prueba integrada con los módulos reales comprueba además que dibujar conserva el estado de los agentes, el mapa y la densidad. Las pruebas automatizadas utilizan el controlador SDL dummy para ejecutarse sin una ventana visible.

@@ -4,16 +4,25 @@ Instalar: `python -m pip install -r requirements.txt`.
 En Python 3.14 se usa pygame-ce (misma importación `pygame`), pues la
 instalación de pygame 2.6.1 desde fuentes falló en este equipo.
 
-Ejecutar `python demo_visualizacion.py`. H alterna densidad, S guarda una
-captura con fecha en `capturas/`, Esc cierra. La demo usa datos ficticios
-estáticos: tiempo 42.5 s, nueve activos y un llegado. No simula movimiento.
+Ejecutar `python main.py --modo B --agentes 40 --semilla 42 --visualizar`
+para el ciclo completo con telemetría, DBSCAN, diagnóstico y A* adaptativo.
+H alterna densidad, S guarda una captura con fecha en `capturas/` y Esc cierra.
+`python demo_visualizacion.py` conserva una demostración independiente con
+40 agentes reales y rutas A* fijas; no es una escena estática.
+
+`--visualizar` corresponde a corridas individuales y no se combina con
+`--experimentos`. Si se cierra antes de terminar, se marca `interrumpido=True`
+y las métricas se calculan al corte real. Los CSV visuales usan el sufijo
+`_visual` para conservar las observaciones de la batería experimental.
 
 Para una captura sin ventana:
 `python demo_visualizacion.py --sin-ventana --calor --captura capturas/demo_visualizacion.png`
 
 ## Contrato de integración
 
-`main.py` y `modulos/entorno.py` conservan su comportamiento original.
+La vista no modifica la lógica del entorno ni del motor. `main.py` integra
+la presentación opcional sin cambiar el paso físico de 0.1 s ni el análisis
+cada 1.0 s; limita la presentación a 10 cuadros/s y siempre libera la ventana.
 Crear una `Visualizacion(entorno)` en el hilo principal y, en cada frame:
 
 ```python

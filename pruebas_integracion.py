@@ -3,10 +3,11 @@
 import contextlib
 import csv
 import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -110,6 +111,85 @@ class PruebasIntegracion(unittest.TestCase):
             main.main(['--modo', 'B', '--agentes', '120', '--semilla', '42'])
         episodio.assert_called_once_with(120, 'B', 42)
         guardar.assert_called_once_with(main.CAPTURAS / 'resultado_S3_B_semilla42.csv', [resultado])
+
+    def test_visualizador_recibe_densidad_y_eventos_cada_tick(self):
+        vista, reloj = Mock(), Mock()
+        vista.procesar_eventos.return_value = True
+        diagnosticos = []
+        clase_diagnostico = main.DiagnosticoCongestion
+
+        def crear_diagnostico(**kwargs):
+            diagnosticos.append(clase_diagnostico(**kwargs))
+            return diagnosticos[-1]
+
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch('main._crear_visualizacion', return_value=(vista, reloj)), \
+             patch('main.DiagnosticoCongestion', side_effect=crear_diagnostico):
+            r = main.ejecutar_episodio(40, 'B', 42, duracion=1.3,
+                                       carpeta_salida=carpeta, visualizar=True)
+        self.assertEqual(vista.procesar_eventos.call_count, 13)
+        self.assertEqual(vista.dibujar.call_count, 13)
+        self.assertEqual(reloj.tick.call_count, 13)
+        self.assertEqual(r['muestras_analisis'], 1)
+        for llamada in vista.dibujar.call_args_list:
+            self.assertIs(llamada.kwargs['densidad'], diagnosticos[0].densidad)
+            self.assertIsNot(llamada.kwargs['densidad'], diagnosticos[0].matriz_D)
+            self.assertEqual(llamada.kwargs['llegados'], 0)
+            self.assertTrue(all(a.activo and not a.llegado for a in llamada.args[0]))
+        vista.cerrar.assert_called_once_with()
+
+    def test_cierre_visual_inmediato_y_entre_muestras(self):
+        for pasos in (0, 3):
+            with self.subTest(pasos=pasos):
+                vista, reloj = Mock(), Mock()
+                vista.procesar_eventos.side_effect = [True] * pasos + [False]
+                with tempfile.TemporaryDirectory() as carpeta, \
+                     patch('main._crear_visualizacion', return_value=(vista, reloj)):
+                    r = main.ejecutar_episodio(40, 'B', 42, carpeta_salida=carpeta,
+                                               visualizar=True)
+                    self.assertTrue((Path(carpeta) / r['archivo_telemetria']).exists())
+                    self.assertFalse((Path(carpeta) / 'experimentos/S1_B_semilla42_telemetria.csv').exists())
+                self.assertTrue(r['interrumpido'])
+                self.assertEqual(r['ticks'], pasos)
+                self.assertAlmostEqual(r['duracion_simulada_s'], pasos * .1)
+                self.assertAlmostEqual(r['tiempo_transito'], pasos * .1)
+                self.assertEqual(vista.dibujar.call_count, pasos)
+                vista.cerrar.assert_called_once_with()
+
+    def test_cierra_visualizador_si_falla_el_dibujo(self):
+        vista = Mock()
+        vista.procesar_eventos.return_value = True
+        vista.dibujar.side_effect = RuntimeError('fallo de dibujo de prueba')
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch('main._crear_visualizacion', return_value=(vista, Mock())):
+            with self.assertRaisesRegex(RuntimeError, 'fallo de dibujo'):
+                main.ejecutar_episodio(40, carpeta_salida=carpeta, visualizar=True)
+        vista.cerrar.assert_called_once_with()
+
+    def test_main_con_pygame_real_dummy_conserva_las_metricas(self):
+        creador_real = main._crear_visualizacion
+        dibujos = []
+
+        def crear_sin_espera(*args):
+            vista, _ = creador_real(*args)
+            vista.dibujar = Mock(wraps=vista.dibujar)
+            dibujos.append(vista.dibujar)
+            return vista, Mock()
+
+        with tempfile.TemporaryDirectory() as carpeta, \
+             patch.dict(os.environ, {'SDL_VIDEODRIVER': 'dummy', 'PYGAME_HIDE_SUPPORT_PROMPT': '1'}):
+            sin_vista = main.ejecutar_episodio(40, 'B', 42, duracion=1,
+                                              carpeta_salida=Path(carpeta) / 'sin_vista')
+            with patch('main._crear_visualizacion', side_effect=crear_sin_espera):
+                con_vista = main.ejecutar_episodio(40, 'B', 42, duracion=1,
+                                                  carpeta_salida=Path(carpeta) / 'con_vista',
+                                                  visualizar=True)
+        for clave in ('ticks', 'tiempo_transito', 'tiempo_espera', 'solapamientos',
+                      'llegados', 'activos_final', 'celdas_criticas_max', 'cambios_ruta'):
+            self.assertEqual(con_vista[clave], sin_vista[clave])
+        self.assertEqual(dibujos[0].call_count, 10)
+        import pygame
+        self.assertFalse(pygame.display.get_init())
 
 
 if __name__ == '__main__':
