@@ -1,0 +1,75 @@
+5.7 Arquitectura e integración
+
+Se integró el prototipo en main.py mediante un ciclo determinista de tiempo simulado y componentes con responsabilidades separadas. La arquitectura se organiza en cinco capas funcionales:
+
+1. Entorno y configuración. Entorno lee configuracion.json y representa el recinto de 30 x 20 m mediante una matriz de celdas de 1 m. Las posiciones físicas conservan el origen inferior izquierdo y se expresan en metros; el mapa se consulta como [fila, columna].
+2. Dinámica de agentes. generar_agentes crea una población reproducible y MotorAgentes actualiza posiciones y velocidades aplicando fuerzas sociales y restricciones geométricas. El motor conserva los objetos llegados para permitir el cálculo de métricas.
+3. Observación y registro. Telemetria recibe la lista completa, identifica llegadas y registra únicamente agentes activos en el CSV. Acumula bloqueo, calcula distancias entre agentes y cuenta pares solapados. Entrega posiciones NumPy de forma (N_activos, 2).
+4. Análisis espacial. DBSCAN detecta grupos con eps=1,2 m y min_samples=5. DiagnosticoCongestion calcula por separado densidad, velocidad y persistencia sobre una grilla de 2 x 2 m. Ambos observan el mismo estado activo. Los clústeres se registran como evidencia de concentración, pero sus etiquetas no son una entrada de las reglas del diagnóstico actual. Este último produce los estados de zona y D de forma (10, 15).
+5. Decisión y realimentación. NavegadorAdaptativo asigna inicialmente las rutas. En modo A las conserva; en modo B recibe D y puede reemplazarlas con A*, respetando alpha=2,0, tau=4,0 s y un margen mínimo de mejora del costo del 10 %. El motor consume la ruta vigente en el siguiente paso físico.
+
+Flujo de datos:
+Entorno/configuración -> MotorAgentes -> Telemetria -> [DBSCAN y Diagnóstico] -> A* -> MotorAgentes.
+La realimentación al navegador procede de D; DBSCAN aporta grupos y ruido al registro del análisis.
+
+La física avanza con dt=0,1 s. Cada diez ticks se ejecutan, en este orden, registro, extracción de posiciones, DBSCAN, diagnóstico y actualización de navegación si el modo es B. Se emplea un contador entero de ticks para programar el análisis cada 1,0 s, evitando usar comparaciones de divisibilidad sobre tiempos flotantes. Los acumuladores internos del motor pueden contener pequeñas diferencias de redondeo; el horizonte está definido por 1800 pasos, equivalentes a 180,0 s.
+
+Cada episodio crea nuevas instancias del entorno, agentes, navegador, motor, telemetría y diagnóstico. Para cada semilla se regeneran las mismas condiciones iniciales en los modos A y B. No se reutilizan agentes mutados entre corridas. Si todos llegan antes del horizonte, el episodio termina; se registra también el instante de cierre cuando cae entre dos muestras enteras, para no omitir las últimas llegadas. Ese registro final no agrega una evaluación de diagnóstico fuera de la cadencia de un segundo. Se exportan telemetría individual y análisis temporal para reconstruir los indicadores por corrida.
+
+El programa admite python main.py --modo B --agentes 120 --semilla 42 para una ejecución individual y python main.py --experimentos para la batería completa. Sin argumentos muestra instrucciones y no abre ventanas ni inicia un lote de forma implícita.
+
+5.8 Tecnologías y herramientas
+
+El prototipo utiliza Python 3 y la biblioteca estándar para la coordinación del experimento, argumentos de línea de comandos, rutas y lectura/escritura de archivos. NumPy proporciona arreglos de posiciones, operaciones vectoriales, generación aleatoria local y agregación de métricas. scikit-learn aporta DBSCAN para la detección no supervisada de grupos. Matplotlib genera la comparación experimental en un archivo PNG mediante el backend Agg, sin requerir una ventana gráfica.
+
+Pygame forma parte de las dependencias previstas para la visualización interactiva, pero no intervino en esta batería y no está instalado en el entorno de ejecución utilizado. La ventana en tiempo real sigue pendiente; los resultados actuales son ejecuciones por lotes sin renderizado. JSON define la geometría del escenario y CSV conserva observaciones, resultados y tablas comparativas sin requerir bibliotecas de hojas de cálculo. Git permite controlar las versiones del código y GitHub corresponde al intercambio y revisión del repositorio del equipo; no se requiere conexión a ese servicio para ejecutar los experimentos locales.
+
+Entorno de ejecución observado: Python 3.14.0, NumPy 2.5.2, scikit-learn 1.9.0 y Matplotlib 3.11.1. No se importaron pandas ni python-docx para producir los resultados ni este informe. Los parámetros del motor permanecieron en sus valores por defecto: ko=ks=kr=1,0, rapidez máxima 1,5 m/s, aceleración de fuerzas máxima 3,0 m/s², relajación 0,5 s, tolerancia de waypoint 0,25 m y llegada a 0,50 m del destino.
+
+5.9 Pruebas y resultados preliminares
+
+El diseño experimental cruza tres niveles de demanda (S1=40, S2=80 y S3=120 agentes), dos modos de navegación y las semillas 42, 43 y 44. Son 18 episodios con horizonte de 180 s. Las condiciones iniciales se emparejan por escenario y semilla entre A y B. El motor y sus parámetros físicos son idénticos; solo cambia la habilitación de la actualización adaptativa de rutas. DBSCAN y Diagnóstico se ejecutan en ambos modos, lo que permite observar la congestión sin modificar las decisiones del modo A.
+
+El tiempo medio de viaje incluye a toda la población inicial: se utiliza tiempo_llegada para quienes completan el recorrido y se asignan 180 s a cada no llegado. Por tanto, es un indicador penalizado de tránsito, no una media exclusiva de los llegados ni una estimación de cuánto tardarían en salir quienes permanecen bloqueados. El tiempo medio de espera es el bloqueo acumulado por Telemetria, dividido por la población inicial; solo se incrementa al observar rapidez inferior al 50 % de la deseada. La tasa de finalización es llegados/población inicial, expresada en porcentaje.
+
+Los solapamientos son pares con distancia inferior a la suma de radios, contados una vez por muestra y sumados durante la corrida. El máximo de celdas críticas es el mayor número simultáneo de zonas clasificadas como críticas durante las observaciones del episodio; no es el número de zonas distintas que alguna vez fueron críticas. Los cambios de ruta corresponden al contador nav.cambios: sustituciones adaptativas aceptadas por mejora de costo. No incluyen asignaciones iniciales ni el mero consumo de waypoints. En A no se invoca la actualización de rutas.
+
+La tabla comparativa presenta medias aritméticas de tres semillas. Para solapamientos y cambios se promedian los totales por corrida; para celdas críticas se promedian los máximos temporales por corrida. El CSV también conserva las sumas de solapamientos y cambios y el mayor pico de celdas críticas entre semillas. La figura compara viaje, espera y finalización con barras de error de desviación estándar descriptiva entre semillas (ddof=0); estas barras no son intervalos de confianza.
+
+Tabla 5.9-1. Resultados medios de los 18 episodios; cada fila resume tres semillas. Datos de capturas/tabla_comparativa_A_vs_B.csv, redondeados a dos decimales.
+Escenario | Agentes | Modo | Viaje penalizado (s) | Espera (s) | Finalización (%) | Solapamientos totales por corrida | Máximo de celdas críticas por corrida | Cambios de ruta por corrida
+S1 | 40 | A | 61,08 | 41,34 | 76,67 | 0,00 | 0,33 | 0,00
+S1 | 40 | B | 25,92 | 0,89 | 100,00 | 0,00 | 0,00 | 110,33
+S2 | 80 | A | 143,94 | 132,85 | 22,50 | 0,00 | 5,67 | 0,00
+S2 | 80 | B | 30,52 | 4,35 | 100,00 | 0,00 | 1,00 | 343,67
+S3 | 120 | A | 141,89 | 130,44 | 25,28 | 0,00 | 8,67 | 0,00
+S3 | 120 | B | 54,66 | 29,56 | 86,39 | 0,00 | 3,33 | 566,67
+Fuente: elaboración propia mediante python main.py --experimentos. Los valores fraccionarios de celdas y cambios son medias entre corridas; los conteos individuales son enteros.
+
+En S1, la finalización media aumenta 23,33 puntos porcentuales y el viaje penalizado disminuye un 57,56 %. Esta mejora agregada está fuertemente influida por la semilla 43: en A llegaron 12 de 40 agentes, mientras que en B llegaron los 40. Con las otras dos semillas ambos modos completaron la población. La adaptación no redujo el viaje en todas las corridas: con semilla 42, el promedio de A fue 25,25 s y el de B fue 26,36 s. La desviación estándar del viaje penalizado en A fue 50,28 s, frente a 0,45 s en B, lo que muestra la sensibilidad del modo fijo a la disposición inicial en esta muestra.
+
+En S2, A completó 20, 19 y 15 de los 80 agentes según la semilla, frente a 80 en cada corrida de B. La finalización media pasó de 22,50 % a 100,00 % y el viaje penalizado disminuyó un 78,80 %. La espera media descendió de 132,85 s a 4,35 s, una reducción del 96,73 %. El máximo de celdas críticas por corrida pasó de una media de 5,67 a 1,00. Las tres ejecuciones adaptativas finalizaron antes del horizonte, entre 44,6 y 49,2 s.
+
+En S3, la finalización media aumentó 61,11 puntos porcentuales y el viaje penalizado disminuyó un 61,48 %. B completó los 120 agentes con semillas 42 y 44, en 59,7 y 50,6 s, respectivamente. Con semilla 43 solo llegaron 71 de 120 y quedaron 49 pendientes al corte de 180 s; A, para esa misma semilla, completó 19. La espera media de S3 bajó de 130,44 s a 29,56 s, pero la variabilidad adaptativa siguió siendo elevada: la desviación estándar del viaje fue 28,81 s y la de finalización 19,25 puntos porcentuales. Por tanto, la adaptación mitigó los bloqueos observados sin eliminarlos en todas las condiciones iniciales.
+
+No se registraron solapamientos en ninguno de los instantes de muestreo de los 18 episodios. Esto es coherente con las restricciones geométricas del motor, pero el indicador de telemetría por sí solo no certifica ausencia de cruces entre muestras. En B se aceptaron 331, 1031 y 1700 modificaciones de ruta en el conjunto de las tres semillas de S1, S2 y S3, respectivamente. Este contador comprende cualquier ruta aceptada por menor costo; no equivale exclusivamente a cambios entre el paso principal y el alternativo. Los parámetros anti-oscilación permanecieron fijos y no se calibraron con esta batería.
+
+Los resultados respaldan una mejora descriptiva del modo adaptativo en las combinaciones ensayadas, especialmente frente a los bloqueos del modo fijo. No demuestran optimalidad, significación estadística ni validez del comportamiento para multitudes reales. La comparación evalúa el sistema implementado con parámetros iniciales; no permite atribuir la mejora a DBSCAN de manera aislada, pues la decisión de A* utiliza D del diagnóstico y no las etiquetas de clúster.
+
+Figura 5.9-1. Comparación de tiempo medio de viaje penalizado, espera y tasa de finalización en S1, S2 y S3. Medias de tres semillas y desviación estándar descriptiva. Archivo: capturas/comparacion_experimental_A_vs_B.png. Fuente: elaboración propia con los resultados del ciclo integrado.
+
+Trazabilidad y verificación. capturas/resultados_experimentos.csv contiene una fila por episodio, con escenario, modo, semilla, horizonte, duración simulada, métricas y referencias a los archivos de observaciones. capturas/experimentos/ contiene 18 CSV de telemetría individual y 18 CSV de análisis temporal, con agentes activos, grupos, ruido, celdas críticas y cambios de ruta. Las rutas de estas referencias son relativas a capturas/. capturas/tabla_comparativa_A_vs_B.csv conserva las seis filas agregadas con precisión numérica completa y dispersión entre semillas.
+
+Se ejecutaron las seis pruebas de pruebas_integracion.py, que verifican la cadencia temporal, cierre parcial, captura de últimas llegadas, finalización real de S1, agregación y opciones de línea de comandos. También pasaron las nueve pruebas existentes de diagnóstico y las once comprobaciones de navegación/PSO. La batería ejecutó DBSCAN con posiciones activas y el diagnóstico real en ambos modos; no utilizó la cinemática simplificada de demo_diagnostico.py. Se mantuvieron intactos todos los módulos preexistentes de simulación.
+
+5.10 Limitaciones y trabajo pendiente
+
+El motor cancela movimientos que producirían colisiones entre agentes o con obstáculos. Esta estrategia protege la geometría, pero puede inducir bloqueos persistentes, simetrías y frenadas abruptas que no representan con fidelidad el contacto humano. La supervivencia de 49 agentes pendientes en S3-B con semilla 43 evidencia que el enrutamiento no resuelve por sí solo esas restricciones. Debe revisarse el comportamiento de contacto antes de interpretar toda detención como congestión peatonal real.
+
+El horizonte de 180 s censura los recorridos incompletos. La penalización de tránsito incorpora esa falta de finalización, pero no predice los tiempos posteriores. El bloqueo se aproxima a partir de muestras cada segundo y omite intervalos breves entre ellas; los solapamientos son conteos por muestra, no duración acumulada de contacto. Solo se evaluaron tres semillas por carga; se necesitan más repeticiones y análisis de sensibilidad para estimar estabilidad, incertidumbre e influencia de los parámetros. La dispersión mostrada no constituye una prueba de hipótesis.
+
+Se respetó el diagnóstico recibido: calcula densidad sobre área útil descontando obstáculos, no siempre sobre 4 m² nominales, y devuelve estados como cadenas. La integración consume esa interfaz real y usa D directamente, sin añadir suavizado. Estas decisiones deben armonizarse con los contratos documentales antes de ampliar la geometría o comparar con variantes de densidad. DBSCAN puede unir grupos por encadenamiento y sus etiquetas no establecen identidad persistente de grupos ni determinan por sí mismas el bloqueo.
+
+PSO permanece pendiente de calibración por lotes sobre la simulación completa. El optimizador existente funciona en pruebas sintéticas, pero no se conectó aquí una función evaluar(theta) que ejecute episodios y construya costo_J. El trabajo siguiente debe evaluar theta=[alpha, ks, kr] con métricas consistentes, una referencia de modo A y semillas de calibración distintas de las de evaluación. Los parámetros usados en esta batería son iniciales, no óptimos calibrados.
+
+La visualización en tiempo real con Pygame continúa pendiente. Se requiere una interfaz que consuma el mismo estado del motor, coloree agentes según velocidad, permita activar el mapa de calor y muestre contadores sin alterar la frecuencia física ni la de análisis. Las figuras actuales son salidas estáticas de Matplotlib. También queda ampliar las pruebas integradas a otras geometrías, estudiar el costo computacional y documentar las condiciones necesarias para reproducir los experimentos en otros equipos.

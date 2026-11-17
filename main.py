@@ -1,47 +1,236 @@
+"""Integración y experimentos reproducibles de simulación de multitudes.
 
-# Motor del escenario
-# Responsable: Padilla Alexander
+Ejemplos desde la raíz:
+    python main.py --modo B --agentes 120 --semilla 42
+    python main.py --experimentos
+"""
 
+import argparse
+import csv
+import math
 from pathlib import Path
+import sys
 
-try:
-    from .modulos.entorno import Entorno
-except ImportError:
-    from modulos.entorno import Entorno
+import numpy as np
+
+from modulos.agentes import MotorAgentes, generar_agentes
+from modulos.dbscan_deteccion import detectar_grupos
+from modulos.diagnostico import DiagnosticoCongestion, ESTADO_CRITICA
+from modulos.entorno import Entorno
+from modulos.navegacion_astar import NavegadorAdaptativo
+from modulos.telemetria import Telemetria
 
 
-def main():
+CARPETA = Path(__file__).resolve().parent
+CAPTURAS = CARPETA / 'capturas'
+DT = 0.1
+HORIZONTE = 180.0
+ESCENARIOS = {'S1': 40, 'S2': 80, 'S3': 120}
+SEMILLAS = (42, 43, 44)
+METRICAS_COMPARADAS = ('tiempo_transito', 'tiempo_espera', 'tasa_finalizacion_pct',
+                       'solapamientos', 'celdas_criticas_max', 'cambios_ruta')
 
-    # Obtener la carpeta donde se encuentra main.py
-    carpeta_proyecto = Path(__file__).resolve().parent
 
-    # Construir la ruta completa de configuracion.json
-    archivo_configuracion = carpeta_proyecto / "configuracion.json"
+def guardar_csv(ruta, filas):
+    """Guarda diccionarios con su orden de columnas y precisión original."""
+    ruta = Path(ruta)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    if not filas:
+        raise ValueError('Se requiere al menos una fila para definir el encabezado')
+    with ruta.open('w', newline='', encoding='utf-8') as archivo:
+        escritor = csv.DictWriter(archivo, fieldnames=list(filas[0]))
+        escritor.writeheader()
+        escritor.writerows(filas)
 
-    # Crear el entorno
-    entorno = Entorno(configuracion=str(archivo_configuracion))
 
-    print("MOTOR DEL ESCENARIO")
+def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
+                     duracion=HORIZONTE, carpeta_salida=CAPTURAS):
+    """Ejecuta un episodio nuevo; duracion permite pruebas cortas desde Python.
 
-    print("Dimensiones:", entorno.ancho, "x", entorno.alto)
-    print("Cuadricula:", entorno.filas, "filas x", entorno.columnas, "columnas")
-    print("Entrada:", entorno.entrada, "| Salida:", entorno.salida)
-    print("Obstaculos:", len(entorno.obstaculos()))
+    El CLI experimental siempre usa 180 s. Los no llegados se penalizan con
+    ese horizonte. El cierre anticipado registra las últimas llegadas incluso
+    si no coincide con un segundo entero, sin duplicar muestras.
+    """
+    modo = str(modo).upper()
+    if modo not in ('A', 'B') or n_agentes not in ESCENARIOS.values():
+        raise ValueError('Se requieren modo A/B y 40, 80 o 120 agentes')
+    if not math.isfinite(duracion) or duracion <= 0:
+        raise ValueError('La duración debe ser finita y positiva')
+    ticks = round(duracion / DT)
+    if not math.isclose(ticks * DT, duracion, abs_tol=1e-9, rel_tol=0):
+        raise ValueError('La duración debe ser múltiplo de 0.1 s')
 
-    print("Pared (15,8):", entorno.es_transitable(15, 8))
-    print("Paso principal (15,11):", entorno.es_transitable(15, 11))
-    print("Paso alternativo (15,5):", entorno.es_transitable(15, 5))
+    entorno = Entorno(configuracion=str(CARPETA / 'configuracion.json'))
+    agentes = generar_agentes(entorno, cantidad=n_agentes, semilla=semilla)
+    nav = NavegadorAdaptativo(entorno, modo=modo, alpha=2.0, tau=4.0, margen=0.10)
+    for agente in agentes:
+        if not nav.asignar_ruta_inicial(agente, t=0.0):
+            raise RuntimeError(f'No existe ruta inicial para el agente {agente.id}')
+    motor = MotorAgentes(entorno, agentes)
+    telemetria = Telemetria(entorno)
+    diagnostico = DiagnosticoCongestion(entorno=entorno)
+    analisis = []
+    max_criticas = 0
+    ultimo_tick_registrado = 0
 
-    # Guardar imagen en la carpeta capturas
-    ruta_imagen = carpeta_proyecto / "capturas" / "mapa_escenario.png"
+    for tick in range(1, ticks + 1):
+        activos = motor.actualizar(dt=DT)
+        if tick % 10 == 0:
+            telemetria.registrar(motor.tiempo, agentes, dt_muestreo=1.0)
+            ultimo_tick_registrado = tick
+            pos_np = telemetria.obtener_posiciones_np(activos)
+            etiquetas, clusters = detectar_grupos(pos_np)
+            estados, D = diagnostico.actualizar(activos, dt=1.0)
+            criticas = int(np.count_nonzero(estados == ESTADO_CRITICA))
+            max_criticas = max(max_criticas, criticas)
+            cambios = nav.actualizar_todos(activos, motor.tiempo, D) if modo == 'B' else 0
+            analisis.append({
+                't': motor.tiempo, 'activos': len(activos), 'clusters': len(clusters),
+                'agentes_ruido': int(np.count_nonzero(etiquetas == -1)),
+                'grupo_mayor': max((c['tamano'] for c in clusters), default=0),
+                'celdas_criticas': criticas,
+                'densidad_maxima': float(diagnostico.densidad.max()),
+                'cambios_ruta_instante': cambios, 'cambios_ruta_acumulados': nav.cambios,
+            })
+        if not activos:
+            break
 
-    entorno.dibujar_mapa(
-        archivo=str(ruta_imagen),
-        mostrar=True
+    if tick != ultimo_tick_registrado:
+        telemetria.registrar(motor.tiempo, agentes,
+                            dt_muestreo=(tick - ultimo_tick_registrado) * DT)
+    metricas = telemetria.obtener_metricas_episodio(n_agentes, duracion)
+    escenario = next(e for e, n in ESCENARIOS.items() if n == n_agentes)
+    nombre = f'{escenario}_{modo}_semilla{semilla}'
+    carpeta_salida = Path(carpeta_salida)
+    ruta_telemetria = Path('experimentos') / f'{nombre}_telemetria.csv'
+    ruta_analisis = Path('experimentos') / f'{nombre}_analisis.csv'
+    telemetria.exportar_csv(str(carpeta_salida / ruta_telemetria))
+    if analisis:
+        guardar_csv(carpeta_salida / ruta_analisis, analisis)
+    return {
+        'escenario': escenario, 'n_agentes': n_agentes, 'modo': modo, 'semilla': semilla,
+        'horizonte_s': duracion, 'duracion_simulada_s': tick * DT, 'ticks': tick,
+        **metricas, 'tasa_finalizacion_pct': 100.0 * metricas['tasa_finalizacion'],
+        'celdas_criticas_max': max_criticas, 'cambios_ruta': nav.cambios,
+        'recalculos_astar': nav.recalculos, 'muestras_analisis': len(analisis),
+        'filas_telemetria': len(telemetria.filas),
+        'archivo_telemetria': ruta_telemetria.as_posix(),
+        'archivo_analisis': ruta_analisis.as_posix() if analisis else '',
+    }
+
+
+def resumir_resultados(resultados):
+    """Promedia semillas; desviación estándar descriptiva con ddof=0.
+
+    celdas_criticas_max promedia los máximos temporales de cada corrida.
+    solapamientos promedia los totales por corrida; se conserva además su suma.
+    """
+    resumen = []
+    for escenario, n_agentes in ESCENARIOS.items():
+        for modo in ('A', 'B'):
+            grupo = [r for r in resultados if r['escenario'] == escenario and r['modo'] == modo]
+            if not grupo:
+                continue
+            fila = {'escenario': escenario, 'n_agentes': n_agentes, 'modo': modo,
+                    'n_semillas': len(grupo)}
+            for clave in METRICAS_COMPARADAS:
+                valores = np.array([r[clave] for r in grupo], dtype=float)
+                fila[clave] = float(valores.mean())
+                fila[clave + '_std'] = float(valores.std(ddof=0))
+            fila['solapamientos_suma'] = sum(r['solapamientos'] for r in grupo)
+            fila['cambios_ruta_suma'] = sum(r['cambios_ruta'] for r in grupo)
+            fila['celdas_criticas_pico'] = max(r['celdas_criticas_max'] for r in grupo)
+            resumen.append(fila)
+    return resumen
+
+
+def generar_figura(resumen, ruta):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    fig, ejes = plt.subplots(1, 3, figsize=(14, 5))
+    colores = {'A': '#386a9b', 'B': '#d77931'}
+    escenarios = list(ESCENARIOS)
+    x = np.arange(len(escenarios))
+    especificaciones = (
+        ('tiempo_transito', 'Tiempo medio de viaje', 'Segundos (no llegados: 180 s)'),
+        ('tiempo_espera', 'Tiempo medio de espera', 'Segundos de bloqueo muestreado'),
+        ('tasa_finalizacion_pct', 'Tasa de finalización', 'Agentes llegados (%)'),
     )
+    for ax, (clave, titulo, unidad) in zip(ejes, especificaciones):
+        for modo, desplazamiento in (('A', -.19), ('B', .19)):
+            grupo = [next(r for r in resumen if r['escenario'] == e and r['modo'] == modo)
+                     for e in escenarios]
+            valores = [r[clave] for r in grupo]
+            barras = ax.bar(x + desplazamiento, valores, .36,
+                            yerr=[r[clave + '_std'] for r in grupo], capsize=3,
+                            color=colores[modo], label=f'Modo {modo}')
+            ax.bar_label(barras, labels=[f'{v:.1f}' for v in valores], padding=4, fontsize=8)
+        ax.set_xticks(x, [f'{e}\n({ESCENARIOS[e]} agentes)' for e in escenarios])
+        ax.set_title(titulo)
+        ax.set_ylabel(unidad)
+        ax.set_ylim(bottom=0)
+        ax.margins(y=.2)
+        if clave == 'tasa_finalizacion_pct':
+            ax.set_ylim(0, 125)
+            ax.set_yticks([0, 25, 50, 75, 100])
+        ax.set_axisbelow(True)
+        ax.grid(axis='y', alpha=.2)
+        ax.spines[['top', 'right']].set_visible(False)
+    fig.suptitle('Comparación experimental: ruta fija (A) y navegación adaptativa (B)', fontsize=14)
+    fig.legend(*ejes[0].get_legend_handles_labels(), loc='lower center', ncol=2, frameon=False)
+    fig.text(.5, .90, 'Semillas 42, 43 y 44 · horizonte 180 s · barras de error: desviación estándar',
+             ha='center', va='top', fontsize=10)
+    fig.tight_layout(rect=(0, .08, 1, .86))
+    ruta = Path(ruta)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(ruta, dpi=180, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
 
-    print("Imagen guardada en:", ruta_imagen)
+
+def ejecutar_experimentos(carpeta_salida=CAPTURAS):
+    carpeta_salida = Path(carpeta_salida)
+    resultados = []
+    for escenario, n_agentes in ESCENARIOS.items():
+        for modo in ('A', 'B'):
+            for semilla in SEMILLAS:
+                print(f'[{len(resultados) + 1}/18] {escenario}, modo {modo}, semilla {semilla}...', flush=True)
+                resultado = ejecutar_episodio(n_agentes, modo, semilla, carpeta_salida=carpeta_salida)
+                resultados.append(resultado)
+                guardar_csv(carpeta_salida / 'resultados_experimentos.csv', resultados)
+                print(f"  Viaje: {resultado['tiempo_transito']:.2f} s | "
+                      f"Espera: {resultado['tiempo_espera']:.2f} s | "
+                      f"Finalización: {resultado['tasa_finalizacion_pct']:.2f}% | "
+                      f"Cambios: {resultado['cambios_ruta']}", flush=True)
+    resumen = resumir_resultados(resultados)
+    guardar_csv(carpeta_salida / 'tabla_comparativa_A_vs_B.csv', resumen)
+    generar_figura(resumen, carpeta_salida / 'comparacion_experimental_A_vs_B.png')
+    return resultados, resumen
 
 
-if __name__ == "__main__":
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--experimentos', action='store_true', help='Ejecutar S1/S2/S3, A/B y semillas 42/43/44 (18 episodios)')
+    parser.add_argument('--modo', choices=('A', 'B'), default='A')
+    parser.add_argument('--agentes', type=int, choices=(40, 80, 120), default=40)
+    parser.add_argument('--semilla', type=int, default=42)
+    argumentos = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(argumentos)
+    if not argumentos:
+        parser.print_help()
+        return
+    if args.experimentos:
+        if any(a.split('=')[0] in ('--modo', '--agentes', '--semilla') for a in argumentos):
+            parser.error('--experimentos define todas las combinaciones; no combinar con opciones individuales')
+        ejecutar_experimentos()
+        print('18 episodios terminados. Resultados, tabla y figura en:', CAPTURAS)
+    else:
+        resultado = ejecutar_episodio(args.agentes, args.modo, args.semilla)
+        guardar_csv(CAPTURAS / f"resultado_{resultado['escenario']}_{args.modo}_semilla{args.semilla}.csv", [resultado])
+        for clave, valor in resultado.items():
+            print(f'{clave}: {valor}')
+
+
+if __name__ == '__main__':
     main()

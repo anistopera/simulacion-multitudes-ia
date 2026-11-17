@@ -1,0 +1,61 @@
+5.3 Telemetría y registro
+Responsable: Flores Choquetopa Nicole
+
+El módulo modulos/telemetria.py implementa la clase Telemetria para observar el estado del motor sin modificar sus agentes. El constructor admite un entorno opcional; el cálculo de las métricas utiliza posiciones físicas (x, y) en metros y velocidades (vx, vy) en m/s. Se aceptan objetos Agente y diccionarios equivalentes. Cada episodio debe utilizar una instancia nueva para separar sus registros y acumuladores.
+
+El programa consumidor llama a registrar(t, agentes, dt_muestreo=1.0) después de diez pasos físicos de 0,1 s. La clase registra una muestra por llamada y no administra un reloj independiente. Debe proporcionarse la lista completa del motor, incluyendo los objetos que ya llegaron, para leer sus tiempos de llegada. Para las filas CSV, las distancias y los solapamientos se seleccionan únicamente los agentes con activo=True y llegado=False. Se rechazan tiempos repetidos o decrecientes para impedir la duplicación accidental de una muestra. El primer registro de la demostración corresponde a t=1 s; no se contabiliza como un segundo adicional el estado inicial en t=0.
+
+El estado acumulado se conserva en un diccionario interno por identificador, ya que el Agente del repositorio no posee atributos tiempo_espera ni tiempo_viaje. Esto permite registrar bloqueo y tránsito sin alterar el contrato real del motor. Las filas contienen copias de los valores observados, de modo que el movimiento posterior no cambia el historial.
+
+Tabla 5.3-1. Variables del registro por agente activo.
+Columna | Unidad | Definición
+t | s | Instante de simulación del muestreo
+id | entero | Identificador del agente
+x, y | m | Coordenadas físicas, con origen inferior izquierdo
+vx, vy | m/s | Componentes de la velocidad realizada por el motor
+dist_vecino_medio | m | Distancia media al resto de agentes activos
+t_bloqueo | s | Tiempo acumulado con rapidez inferior al 50 % de la deseada
+
+La exportación mediante exportar_csv(ruta_csv) genera el encabezado exacto:
+t,id,x,y,vx,vy,dist_vecino_medio,t_bloqueo
+
+Para N agentes activos, se construye la matriz de distancias euclidianas d_ij. La distancia media del agente i se define como la suma de d_ij para j distinto de i dividida por N-1. Se considera a todos los demás activos, sin un radio de vecindad adicional. Si solo hay un activo se registra 0,0 m; si no hay activos no se generan filas. La matriz requiere memoria y trabajo de orden O(N²), adecuados para las cargas previstas de 40, 80 y 120 agentes.
+
+Un agente acumula dt_muestreo segundos de bloqueo si hypot(vx, vy) < 0,5 * v_deseada. La igualdad exacta con el umbral no incrementa el contador. El tiempo acumulado no se reinicia al recuperar velocidad. Esta medida aproxima el intervalo mediante la velocidad observada en su extremo; un muestreo cada segundo puede omitir frenadas breves entre observaciones. Los llegados no acumulan bloqueo aunque el motor ponga su velocidad en cero al retirarlos.
+
+En cada muestra se cuenta una vez cada par i<j con d_ij < radio_i + radio_j. Con los radios habituales de 0,25 m, el umbral es 0,50 m; el contacto exacto no cuenta como solapamiento. Se respetan los radios individuales si difieren. solapamientos_instante contiene el conteo de la última muestra y solapamientos_total suma los conteos del episodio. Un mismo par superpuesto en varios instantes aporta varias veces: la métrica no representa pares únicos ni una duración integrada y depende de la frecuencia de muestreo. Tampoco detecta cruces que ocurran completamente entre muestras.
+
+El método obtener_posiciones_np() entrega una copia de las posiciones del último muestreo, con dtype float64 y forma (N_activos, 2), cuyas columnas son [x, y]. Si no hay agentes devuelve (0, 2). Esta salida puede pasarse directamente a detectar_grupos() de modulos/dbscan_deteccion.py. Si se proporciona una lista explícita al método, se consultan sus posiciones actuales sin acumular métricas ni modificar el historial. El orden de filas corresponde al orden de los activos en la lista recibida, lo que permite asociar las etiquetas de DBSCAN con sus agentes.
+
+obtener_metricas_episodio(total_agentes, duracion_total) devuelve las claves que consume costo_J: tiempo_transito, tiempo_espera, solapamientos y tasa_finalizacion, además de llegados y activos_final. El tiempo de tránsito de un llegado es su tiempo_llegada exacto del motor, no el instante posterior en que se observó la llegada. Para cada no llegado se utiliza la duración total del episodio como penalización: 180 s en los episodios oficiales y 20 s en la demostración corta. tiempo_transito es la media de esos valores sobre toda la población inicial. tiempo_espera es la suma de los bloqueos acumulados dividida por esa misma población; solapamientos es el total de pares por muestra y tasa_finalizacion es llegados/total_agentes. activos_final indica los pendientes de completar, total_agentes-llegados, para el ciclo de vida habitual del motor, sin cancelaciones externas.
+
+Las consultas de métricas no alteran los acumuladores. Identificadores no observados se consideran no llegados, con tránsito penalizado y bloqueo cero; por ello es necesario registrar regularmente la población completa para obtener métricas representativas. En un episodio de población cero, las medias y la tasa devueltas son cero para evitar divisiones indefinidas. Una duración menor al último instante registrado o una población menor que la observada se rechazan.
+
+Demostración reproducible y fragmento real del CSV
+------------------------------------------------
+Se ejecutó python -m modulos.telemetria desde la raíz con Entorno(configuracion="configuracion.json"), 40 agentes, semilla 42 y MotorAgentes con sus parámetros por defecto y rutas fijas. Se avanzaron 200 pasos de 0,1 s y se registraron 20 muestras, de t=1 a t=20 s. El archivo capturas/telemetria_ejemplo.csv contiene 786 filas de agentes activos, además del encabezado. La disminución respecto de 800 filas se debe a las llegadas durante el intervalo.
+
+Tabla 5.3-2. Fragmento real de capturas/telemetria_ejemplo.csv (seis decimales; las tres primeras filas y una muestra posterior con bloqueo).
+t | id | x | y | vx | vy | dist_vecino_medio | t_bloqueo
+1.000000 | 0 | 5.317976 | 15.405985 | 0.822302 | 0.178364 | 5.755213 | 0.000000
+1.000000 | 1 | 2.297005 | 10.610128 | 0.877544 | 0.011161 | 3.711994 | 0.000000
+1.000000 | 2 | 5.886089 | 6.401996 | 1.046522 | 0.232175 | 5.654862 | 0.000000
+4.000000 | 37 | 9.590342 | 13.700553 | -0.055141 | -0.497679 | 4.781655 | 1.000000
+Fuente: elaboración propia a partir de la ejecución del motor y del módulo de telemetría.
+
+Tabla 5.3-3. Métricas al corte de 20 s, con penalización de tránsito de 20 s para los no llegados.
+Métrica | Valor
+Tiempo medio de tránsito, incluyendo no llegados | 19,7525 s
+Tiempo medio de espera muestreada | 2,15 s
+Solapamientos acumulados en las muestras | 0
+Tasa de finalización | 0,175 (17,5 %)
+Llegados | 7
+Activos pendientes al corte | 33
+
+Estos resultados corresponden a un corte temprano de una ejecución con rutas fijas; no son una comparación A/B ni implican que los 33 agentes pendientes no puedan llegar después. Cero solapamientos significa que no se observaron pares superpuestos en los veinte instantes registrados; no sustituye la validación continua del motor.
+
+Validación
+----------
+Se ejecutó python pruebas_telemetria.py: las 12 pruebas pasaron. Se verificaron encabezado y contenido CSV, matriz de posiciones normal y vacía, distancia media con un triángulo de distancias conocidas, copias independientes del estado, umbral estricto de bloqueo, intervalos variables, pares de solapamiento y radios individuales, filtrado de retirados, soporte de objetos y diccionarios, métricas de episodios vacíos y penalización de no llegados, y rechazo de entradas inválidas sin alterar el registro. Una prueba de integración de 40 s usa MotorAgentes, entrega posiciones a DBSCAN, observa las 40 llegadas y contrasta el tiempo medio con los tiempos exactos del motor. También continuaron pasando las 15 pruebas existentes de Agentes y las 11 comprobaciones de Navegación/PSO.
+
+La integración final deberá conservar el mismo intervalo de muestreo para comparar escenarios, pasar las listas completas al registro y emplear listas de activos para el análisis espacial. Este módulo no modifica el entorno, las fuerzas, DBSCAN, el diagnóstico, A* ni PSO.
