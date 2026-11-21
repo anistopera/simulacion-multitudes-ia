@@ -54,7 +54,8 @@ def _crear_visualizacion(entorno, carpeta_capturas, modo):
 
 
 def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
-                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False):
+                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False,
+                     vista=None):
     """Ejecuta un episodio nuevo; duracion permite pruebas cortas desde Python.
 
     El CLI experimental siempre usa 180 s. Los no llegados se penalizan con
@@ -87,12 +88,18 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
     ticks_ejecutados = 0
     interrumpido = False
     vis = None
-    if visualizar:
+    if vista is not None:
+        # Interfaz web (modulos/servidor_web.py): ofrece procesar_eventos, dibujar,
+        # tick, conectar y cerrar. Hace de vista y de reloj a la vez.
+        vis = reloj = vista
+    elif visualizar:
         vis, reloj = _crear_visualizacion(entorno, carpeta_salida, modo)
     try:
         if vis is not None:
             # Calor inicial válido sin acumular persistencia ni avanzar la física.
             diagnostico.actualizar(motor.agentes_activos, dt=0.0)
+        if vista is not None:
+            vista.conectar(motor, diagnostico)
         for tick in range(1, ticks + 1):
             if vis is not None and not vis.procesar_eventos():
                 interrumpido = True
@@ -134,7 +141,7 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
     metricas = telemetria.obtener_metricas_episodio(n_agentes, corte_metricas)
     escenario = next(e for e, n in ESCENARIOS.items() if n == n_agentes)
     nombre = f'{escenario}_{modo}_semilla{semilla}'
-    if visualizar:
+    if visualizar or vista is not None:
         nombre += '_visual'
     carpeta_salida = Path(carpeta_salida)
     ruta_telemetria = Path('experimentos') / f'{nombre}_telemetria.csv'
@@ -250,6 +257,7 @@ def main(argv=None):
     ejecucion = parser.add_mutually_exclusive_group()
     ejecucion.add_argument('--experimentos', action='store_true', help='Ejecutar S1/S2/S3, A/B y semillas 42/43/44 (18 episodios)')
     ejecucion.add_argument('--visualizar', action='store_true', help='Mostrar la corrida individual con Pygame: H calor, S captura, Esc cerrar')
+    ejecucion.add_argument('--interfaz', action='store_true', help='Abrir la interfaz web local con controles en pantalla (--modo, --agentes y --semilla fijan los valores iniciales)')
     parser.add_argument('--modo', choices=('A', 'B'), default='A')
     parser.add_argument('--agentes', type=int, choices=(40, 80, 120), default=40)
     parser.add_argument('--semilla', type=int, default=42)
@@ -263,6 +271,10 @@ def main(argv=None):
             parser.error('--experimentos define todas las combinaciones; no combinar con opciones individuales')
         ejecutar_experimentos()
         print('18 episodios terminados. Resultados, tabla y figura en:', CAPTURAS)
+    elif args.interfaz:
+        from modulos import servidor_web
+        escenario = next(e for e, n in ESCENARIOS.items() if n == args.agentes)
+        servidor_web.servir(sys.modules[__name__], args.modo, escenario, args.semilla)
     else:
         if args.visualizar:
             resultado = ejecutar_episodio(args.agentes, args.modo, args.semilla, visualizar=True)

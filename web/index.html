@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulación de multitudes</title>
+  <link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+  <main id="app">
+    <header id="barra">
+      <h1>Simulación de multitudes</h1>
+      <span id="indicador" class="listo" role="status"><i></i><b id="indicador-txt">Listo</b></span>
+      <span id="contexto"></span>
+    </header>
+
+    <aside class="panel" id="controles" aria-label="Controles">
+      <section>
+        <h2>Modo <kbd>A</kbd><kbd>B</kbd><kbd>P</kbd></h2>
+        <div class="segmentado">
+          <button type="button" data-modo="A" title="Ruta fija">A</button>
+          <button type="button" data-modo="B" title="Ruta adaptativa">B</button>
+          <button type="button" data-modo="B+PSO" title="Ruta adaptativa con parámetros PSO">B+PSO</button>
+        </div>
+        <p class="nota" id="nota-pso" hidden></p>
+      </section>
+
+      <section>
+        <h2>Escenario <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></h2>
+        <div class="segmentado">
+          <button type="button" data-escenario="S1">S1 <small>40</small></button>
+          <button type="button" data-escenario="S2">S2 <small>80</small></button>
+          <button type="button" data-escenario="S3">S3 <small>120</small></button>
+        </div>
+        <h3>Semilla <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd></h3>
+        <div class="segmentado chico">
+          <button type="button" data-semilla="42">42</button>
+          <button type="button" data-semilla="43">43</button>
+          <button type="button" data-semilla="44">44</button>
+        </div>
+      </section>
+
+      <section class="reproduccion">
+        <h2>Reproducción</h2>
+        <button type="button" class="principal" id="btn-iniciar"><span id="btn-iniciar-txt">Iniciar</span> <kbd>Espacio</kbd></button>
+        <div class="par">
+          <button type="button" id="btn-paso" title="Avanza 0,1 s">Paso <kbd>→</kbd></button>
+          <button type="button" id="btn-reiniciar">Reiniciar <kbd>X</kbd></button>
+        </div>
+        <h3>Velocidad <kbd>V</kbd></h3>
+        <div class="segmentado">
+          <button type="button" data-velocidad="1">x1</button>
+          <button type="button" data-velocidad="2">x2</button>
+          <button type="button" data-velocidad="4">x4</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Capas</h2>
+        <div class="par">
+          <button type="button" id="capa-calor" aria-pressed="false">Calor <kbd>H</kbd></button>
+          <button type="button" id="capa-grupos" aria-pressed="false">Grupos <kbd>C</kbd></button>
+        </div>
+        <button type="button" id="btn-captura">Capturar PNG <kbd>S</kbd></button>
+      </section>
+    </aside>
+
+    <section id="escena" aria-label="Recinto">
+      <canvas id="lienzo" role="img" aria-label="Recinto de 30 por 20 metros con peatones"></canvas>
+      <div id="aviso" role="alert" hidden></div>
+      <div id="resumen" hidden>
+        <h2>Episodio terminado</h2>
+        <div class="cifras">
+          <div><strong id="res-llegados"></strong><span>llegados</span></div>
+          <div><strong id="res-tiempo"></strong><span>tiempo</span></div>
+          <div><strong id="res-tasa"></strong><span>finalización</span></div>
+        </div>
+        <div class="par">
+          <button type="button" id="res-ver">Ver recinto</button>
+          <button type="button" class="principal" id="res-reiniciar">Reiniciar</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" id="metricas" aria-label="Métricas">
+      <section class="cuadro">
+        <div><strong id="m-activos">0</strong><span>Activos</span></div>
+        <div><strong><span id="m-llegados">0</span><small id="m-total"></small></strong><span>Llegados</span></div>
+        <div><strong><span id="m-tiempo">0,0</span><small> s</small></strong><span>Tiempo</span></div>
+        <div><strong id="m-criticas">0</strong><span>Celdas críticas</span></div>
+      </section>
+
+      <section class="leyenda">
+        <h2>Velocidad real / deseada</h2>
+        <div class="rampa velocidad"></div>
+        <div class="escala"><span>detenido</span><span>fluye</span></div>
+        <h2>Densidad</h2>
+        <div class="rampa densidad"></div>
+        <div class="escala"><span>0</span><span>4+ pers/m²</span></div>
+        <h2>Recinto y grupos</h2>
+        <ul>
+          <li><i class="anillo entrada"></i>Entrada</li>
+          <li><i class="anillo salida"></i>Salida</li>
+          <li><i class="marca nucleo"></i>Núcleo</li>
+          <li><i class="marca frontera"></i>Frontera</li>
+          <li><i class="marca ruido">×</i>Ruido</li>
+          <li><i class="marca centro">+</i>Centro</li>
+        </ul>
+        <p class="nota">Gris: sin iniciar. Cuadrícula de 2 m. Origen (0, 0) abajo a la izquierda.</p>
+      </section>
+    </aside>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
