@@ -8,6 +8,7 @@ Ejemplos desde la raíz:
 
 import argparse
 import csv
+import json
 import math
 from pathlib import Path
 import sys
@@ -28,6 +29,7 @@ DT = 0.1
 HORIZONTE = 180.0
 ESCENARIOS = {'S1': 40, 'S2': 80, 'S3': 120}
 SEMILLAS = (42, 43, 44)
+MODOS_V3 = ('A', 'B', 'B_PSO')
 METRICAS_COMPARADAS = ('tiempo_transito', 'tiempo_espera', 'tasa_finalizacion_pct',
                        'solapamientos', 'celdas_criticas_max', 'cambios_ruta')
 
@@ -53,9 +55,46 @@ def _crear_visualizacion(entorno, carpeta_capturas, modo):
                           titulo=f'Multitudes: modo {modo}'), pygame.time.Clock())
 
 
+def validar_theta(datos):
+    if isinstance(datos, dict):
+        datos = [datos[k] for k in ('alpha', 'ks', 'kr')]
+    if not isinstance(datos, (list, tuple)) or len(datos) != 3:
+        raise ValueError('theta debe contener [alpha, ks, kr]')
+    try:
+        alpha, ks, kr = map(float, datos)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('theta debe contener tres números') from exc
+    if not all(map(math.isfinite, (alpha, ks, kr))):
+        raise ValueError('theta contiene valores no finitos')
+    if not (0 <= alpha <= 5 and 0.5 <= ks <= 2 and 0.5 <= kr <= 3):
+        raise ValueError('theta fuera de rangos: alpha [0,5], ks [0.5,2], kr [0.5,3]')
+    return alpha, ks, kr
+
+
+def cargar_theta(ruta=CAPTURAS / 'theta_optimo.json'):
+    """Lee parámetros calibrados; no sustituye una calibración ausente."""
+    ruta = Path(ruta)
+    if not ruta.is_file():
+        raise FileNotFoundError(f'Falta calibración PSO: {ruta}. Solicítala a Keyla.')
+    with ruta.open(encoding='utf-8') as archivo:
+        datos = json.load(archivo)
+    if isinstance(datos, dict):
+        if 'theta' in datos:
+            datos = datos['theta']
+        elif 'theta_optimo' in datos:
+            datos = datos['theta_optimo']
+        else:
+            datos = [datos[k] for k in ('alpha', 'ks', 'kr')]
+    return validar_theta(datos)
+
+
 def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
+<<<<<<< HEAD
                      duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False,
                      vista=None):
+=======
+                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False, theta=None):
+>>>>>>> origin/main
     """Ejecuta un episodio nuevo; duracion permite pruebas cortas desde Python.
 
     El CLI experimental siempre usa 180 s. Los no llegados se penalizan con
@@ -65,8 +104,16 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
     al corte real; sus archivos usan el sufijo _visual y no sustituyen el lote.
     """
     modo = str(modo).upper()
-    if modo not in ('A', 'B') or n_agentes not in ESCENARIOS.values():
-        raise ValueError('Se requieren modo A/B y 40, 80 o 120 agentes')
+    if modo not in ('A', 'B', 'B_PSO'):
+        raise ValueError('Modo inválido. Use A, B o B_PSO')
+    if n_agentes not in ESCENARIOS.values():
+        raise ValueError('Se requieren 40, 80 o 120 agentes')
+    if modo == 'B_PSO':
+        alpha, ks, kr = cargar_theta() if theta is None else validar_theta(theta)
+    else:
+        if theta is not None:
+            raise ValueError('theta solo se utiliza en B_PSO')
+        alpha, ks, kr = 2.0, 1.0, 1.0
     if not math.isfinite(duracion) or duracion <= 0:
         raise ValueError('La duración debe ser finita y positiva')
     ticks = round(duracion / DT)
@@ -75,11 +122,15 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
 
     entorno = Entorno(configuracion=str(CARPETA / 'configuracion.json'))
     agentes = generar_agentes(entorno, cantidad=n_agentes, semilla=semilla)
-    nav = NavegadorAdaptativo(entorno, modo=modo, alpha=2.0, tau=4.0, margen=0.10)
+    nav = NavegadorAdaptativo(entorno, modo='B' if modo == 'B_PSO' else modo,
+                              alpha=alpha, tau=4.0, margen=0.10)
     for agente in agentes:
         if not nav.asignar_ruta_inicial(agente, t=0.0):
             raise RuntimeError(f'No existe ruta inicial para el agente {agente.id}')
-    motor = MotorAgentes(entorno, agentes)
+    if modo == 'B_PSO':
+        motor = MotorAgentes(entorno, agentes, ks=ks, kr=kr)
+    else:
+        motor = MotorAgentes(entorno, agentes)
     telemetria = Telemetria(entorno)
     diagnostico = DiagnosticoCongestion(entorno=entorno)
     analisis = []
@@ -114,7 +165,7 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
                 estados, D = diagnostico.actualizar(activos, dt=1.0)
                 criticas = int(np.count_nonzero(estados == ESTADO_CRITICA))
                 max_criticas = max(max_criticas, criticas)
-                cambios = nav.actualizar_todos(activos, motor.tiempo, D) if modo == 'B' else 0
+                cambios = nav.actualizar_todos(activos, motor.tiempo, D) if modo in ('B', 'B_PSO') else 0
                 analisis.append({
                     't': motor.tiempo, 'activos': len(activos), 'clusters': len(clusters),
                     'agentes_ruido': int(np.count_nonzero(etiquetas == -1)),
@@ -162,7 +213,7 @@ def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
     }
 
 
-def resumir_resultados(resultados):
+def resumir_resultados(resultados, modos=('A', 'B')):
     """Promedia semillas; desviación estándar descriptiva con ddof=0.
 
     celdas_criticas_max promedia los máximos temporales de cada corrida.
@@ -170,7 +221,7 @@ def resumir_resultados(resultados):
     """
     resumen = []
     for escenario, n_agentes in ESCENARIOS.items():
-        for modo in ('A', 'B'):
+        for modo in modos:
             grupo = [r for r in resultados if r['escenario'] == escenario and r['modo'] == modo]
             if not grupo:
                 continue
@@ -187,13 +238,13 @@ def resumir_resultados(resultados):
     return resumen
 
 
-def generar_figura(resumen, ruta):
+def generar_figura(resumen, ruta, modos=('A', 'B')):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
     fig, ejes = plt.subplots(1, 3, figsize=(14, 5))
-    colores = {'A': '#386a9b', 'B': '#d77931'}
+    colores = {'A': '#386a9b', 'B': '#d77931', 'B_PSO': '#3a9464'}
     escenarios = list(ESCENARIOS)
     x = np.arange(len(escenarios))
     especificaciones = (
@@ -202,11 +253,12 @@ def generar_figura(resumen, ruta):
         ('tasa_finalizacion_pct', 'Tasa de finalización', 'Agentes llegados (%)'),
     )
     for ax, (clave, titulo, unidad) in zip(ejes, especificaciones):
-        for modo, desplazamiento in (('A', -.19), ('B', .19)):
+        for indice, modo in enumerate(modos):
+            desplazamiento = (indice - (len(modos) - 1) / 2) * (0.8 / len(modos))
             grupo = [next(r for r in resumen if r['escenario'] == e and r['modo'] == modo)
                      for e in escenarios]
             valores = [r[clave] for r in grupo]
-            barras = ax.bar(x + desplazamiento, valores, .36,
+            barras = ax.bar(x + desplazamiento, valores, 0.8 / len(modos) * 0.9,
                             yerr=[r[clave + '_std'] for r in grupo], capsize=3,
                             color=colores[modo], label=f'Modo {modo}')
             ax.bar_label(barras, labels=[f'{v:.1f}' for v in valores], padding=4, fontsize=8)
@@ -221,8 +273,8 @@ def generar_figura(resumen, ruta):
         ax.set_axisbelow(True)
         ax.grid(axis='y', alpha=.2)
         ax.spines[['top', 'right']].set_visible(False)
-    fig.suptitle('Comparación experimental: ruta fija (A) y navegación adaptativa (B)', fontsize=14)
-    fig.legend(*ejes[0].get_legend_handles_labels(), loc='lower center', ncol=2, frameon=False)
+    fig.suptitle('Comparación experimental: ' + ' vs '.join(modos), fontsize=14)
+    fig.legend(*ejes[0].get_legend_handles_labels(), loc='lower center', ncol=len(modos), frameon=False)
     fig.text(.5, .90, 'Semillas 42, 43 y 44 · horizonte 180 s · barras de error: desviación estándar',
              ha='center', va='top', fontsize=10)
     fig.tight_layout(rect=(0, .08, 1, .86))
@@ -252,13 +304,38 @@ def ejecutar_experimentos(carpeta_salida=CAPTURAS):
     return resultados, resumen
 
 
+def ejecutar_experimentos_v3(carpeta_salida=CAPTURAS):
+    """27 episodios: 3 escenarios x 3 modos x 3 semillas."""
+    carpeta_salida = Path(carpeta_salida)
+    theta = cargar_theta()
+    resultados = []
+    for escenario, n_agentes in ESCENARIOS.items():
+        for modo in MODOS_V3:
+            for semilla in SEMILLAS:
+                print(f'[{len(resultados) + 1}/27] {escenario}, {modo}, semilla {semilla}', flush=True)
+                resultado = ejecutar_episodio(n_agentes, modo, semilla,
+                    carpeta_salida=carpeta_salida,
+                    theta=theta if modo == 'B_PSO' else None)
+                resultados.append(resultado)
+                guardar_csv(carpeta_salida / 'resultados_experimentos_v3.csv', resultados)
+    resumen = resumir_resultados(resultados, modos=MODOS_V3)
+    guardar_csv(carpeta_salida / 'tabla_comparativa_v3.csv', resumen)
+    generar_figura(resumen, carpeta_salida / 'comparacion_experimental_A_vs_B.png', modos=MODOS_V3)
+    return resultados, resumen
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ejecucion = parser.add_mutually_exclusive_group()
+    ejecucion.add_argument('--experimentos-v3', action='store_true', help='Comparar A/B/B_PSO (27 episodios)')
     ejecucion.add_argument('--experimentos', action='store_true', help='Ejecutar S1/S2/S3, A/B y semillas 42/43/44 (18 episodios)')
     ejecucion.add_argument('--visualizar', action='store_true', help='Mostrar la corrida individual con Pygame: H calor, S captura, Esc cerrar')
+<<<<<<< HEAD
     ejecucion.add_argument('--interfaz', action='store_true', help='Abrir la interfaz web local con controles en pantalla (--modo, --agentes y --semilla fijan los valores iniciales)')
     parser.add_argument('--modo', choices=('A', 'B'), default='A')
+=======
+    parser.add_argument('--modo', choices=MODOS_V3, default='A')
+>>>>>>> origin/main
     parser.add_argument('--agentes', type=int, choices=(40, 80, 120), default=40)
     parser.add_argument('--semilla', type=int, default=42)
     argumentos = sys.argv[1:] if argv is None else argv
@@ -266,7 +343,12 @@ def main(argv=None):
     if not argumentos:
         parser.print_help()
         return
-    if args.experimentos:
+    if args.experimentos_v3:
+        if any(a.split('=')[0] in ('--modo', '--agentes', '--semilla') for a in argumentos):
+            parser.error('--experimentos-v3 no admite opciones individuales')
+        ejecutar_experimentos_v3()
+        print('27 episodios terminados. Resultados V3 en:', CAPTURAS)
+    elif args.experimentos:
         if any(a.split('=')[0] in ('--modo', '--agentes', '--semilla') for a in argumentos):
             parser.error('--experimentos define todas las combinaciones; no combinar con opciones individuales')
         ejecutar_experimentos()
