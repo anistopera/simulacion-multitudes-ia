@@ -89,12 +89,8 @@ def cargar_theta(ruta=CAPTURAS / 'theta_optimo.json'):
 
 
 def ejecutar_episodio(n_agentes=40, modo='A', semilla=42,
-<<<<<<< HEAD
-                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False,
+                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False, theta=None,
                      vista=None):
-=======
-                     duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False, theta=None):
->>>>>>> origin/main
     """Ejecuta un episodio nuevo; duracion permite pruebas cortas desde Python.
 
     El CLI experimental siempre usa 180 s. Los no llegados se penalizan con
@@ -330,12 +326,8 @@ def main(argv=None):
     ejecucion.add_argument('--experimentos-v3', action='store_true', help='Comparar A/B/B_PSO (27 episodios)')
     ejecucion.add_argument('--experimentos', action='store_true', help='Ejecutar S1/S2/S3, A/B y semillas 42/43/44 (18 episodios)')
     ejecucion.add_argument('--visualizar', action='store_true', help='Mostrar la corrida individual con Pygame: H calor, S captura, Esc cerrar')
-<<<<<<< HEAD
     ejecucion.add_argument('--interfaz', action='store_true', help='Abrir la interfaz web local con controles en pantalla (--modo, --agentes y --semilla fijan los valores iniciales)')
-    parser.add_argument('--modo', choices=('A', 'B'), default='A')
-=======
     parser.add_argument('--modo', choices=MODOS_V3, default='A')
->>>>>>> origin/main
     parser.add_argument('--agentes', type=int, choices=(40, 80, 120), default=40)
     parser.add_argument('--semilla', type=int, default=42)
     argumentos = sys.argv[1:] if argv is None else argv

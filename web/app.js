@@ -297,7 +297,7 @@ function actualizarPanel() {
   if ($('indicador').className !== e.fase) $('indicador').className = e.fase;
   poner('indicador-txt', NOMBRES[e.fase]);
   const lento = e.fase === 'corriendo' && e.velocidad_real < e.velocidad * 0.9;
-  poner('contexto', `${e.escenario} · ${e.total} agentes · modo ${e.modo} · semilla ${e.semilla} · x${e.velocidad}`
+  poner('contexto', `${e.escenario} · ${e.total} agentes · modo ${e.modo.replace('_', '+')} · semilla ${e.semilla} · x${e.velocidad}`
     + (lento ? ` (real x${num(e.velocidad_real)})` : ''));
   poner('m-activos', e.activos);
   poner('m-llegados', e.llegados);
@@ -309,7 +309,7 @@ function actualizarPanel() {
   marcar('[data-escenario]', 'escenario', e.escenario);
   marcar('[data-semilla]', 'semilla', e.semilla);
   marcar('[data-velocidad]', 'velocidad', e.velocidad);
-  deshabilitar(document.querySelector('[data-modo="B+PSO"]'), !e.pso.disponible);
+  deshabilitar(document.querySelector('[data-modo="B_PSO"]'), !e.pso.disponible);
   ocultar('nota-pso', e.pso.disponible);
   poner('nota-pso', `B+PSO no disponible: ${e.pso.motivo}.`);
 
@@ -469,7 +469,7 @@ document.addEventListener('click', (e) => {
 const ATAJOS = {
   ' ': 'btn-iniciar', arrowright: 'btn-paso', x: 'btn-reiniciar',
   h: 'capa-calor', c: 'capa-grupos', s: 'btn-captura',
-  a: '[data-modo="A"]', b: '[data-modo="B"]', p: '[data-modo="B+PSO"]',
+  a: '[data-modo="A"]', b: '[data-modo="B"]', p: '[data-modo="B_PSO"]',
   1: '[data-escenario="S1"]', 2: '[data-escenario="S2"]', 3: '[data-escenario="S3"]',
   q: '[data-semilla="42"]', w: '[data-semilla="43"]', e: '[data-semilla="44"]',
 };

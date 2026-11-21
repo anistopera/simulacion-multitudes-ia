@@ -291,3 +291,24 @@ Cambios sobre el plan pedidos por Cris: control de velocidad x1/x2/x4 y direcci�
 - **Atajos:** Espacio, →, X, V, A, B, P, 1, 2, 3, H, C, S. Espacio siempre es iniciar/pausa, aunque un botón tenga el foco.
 - **Verificado con Edge headless:** teclado, capas, resumen final y distribución en 1366×768, 1366×620, 1920×1080, 1100×560 y 900×1000, sin desbordes.
 - **Pendiente:** Paso 9 (pruebas automatizadas) y Paso 10 (capa Rutas, opcional). `main.py` no cambió en este bloque.
+
+### Fusión con PSO y Paso 9: COMPLETO
+
+El commit 63ef023 subió `main.py` con marcadores de conflicto. Se resolvió editando el archivo, sin tocar el historial.
+
+**Cambio exacto en `main.py` (para avisar a Jheycob).** Solo se resolvieron las dos zonas en conflicto; su lógica de PSO queda intacta:
+
+1. Firma: `ejecutar_episodio(n_agentes=40, modo='A', semilla=42, duracion=HORIZONTE, carpeta_salida=CAPTURAS, visualizar=False, theta=None, vista=None)`. `vista` va después de `theta`, así su orden posicional no cambia.
+2. CLI: se conserva `--interfaz` en el grupo excluyente y `--modo` usa `choices=MODOS_V3`.
+
+**Cambio exacto en `pruebas/ejecutar_todas.py`:** una línea, `'pruebas_interfaz_web',`, al final de `PRUEBAS`, después de `'pruebas_pso',`.
+
+**Contrato PSO real:**
+- El modo es `'B_PSO'` (`MODOS_V3`). La interfaz lo muestra como B+PSO, con atajo `P`, y envía `B_PSO`.
+- Theta se pasa con `ejecutar_episodio(..., theta=(alpha, ks, kr))`. Con A o B debe ser `None`.
+- `calibrar_pso.py` escribe `{"theta": {"alpha", "ks", "kr"}, ...}`. El servidor valida con `main.cargar_theta`, sin duplicar formato ni límites.
+- **`capturas/theta_optimo.json` no existe** en disco ni en `origin/main`, y tampoco hay CSV de resultados PSO o V3. El botón sigue deshabilitado hasta que se entregue ese archivo.
+
+**Verificación:** suite 13/13, autoprueba OK, `main.py` sin marcadores, `--help` correcto, `capturas/` sin cambios, `web/` 34,4 KB. La prueba con PSO usa un theta temporal de prueba, no una calibración real.
+
+**Pendiente:** capa Rutas (R), `theta_optimo.json` y actualizar en el README la mención a "diez scripts".

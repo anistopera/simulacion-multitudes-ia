@@ -34,12 +34,12 @@ import numpy as np
 from modulos.dbscan_deteccion import clasificar_puntos
 from modulos.diagnostico import ESTADO_CRITICA
 from modulos.entorno import Entorno
-from modulos.optimizacion_pso import LIMITES
 
 RAIZ = Path(__file__).resolve().parents[1]
 WEB = RAIZ / 'web'
 PUERTO = 8765
-MODOS = ('A', 'B', 'B+PSO')
+MODO_PSO = 'B_PSO'        # identificador real de main.py; la interfaz lo muestra como B+PSO
+MODOS = ('A', 'B', MODO_PSO)
 VELOCIDADES = (1, 2, 4)   # solo cambia el ritmo del reloj; el paso físico sigue en 0.1 s
 MAX_PASOS_PENDIENTES = 5  # al mantener pulsada la tecla de paso
 ARCHIVO_THETA = RAIZ / 'capturas' / 'theta_optimo.json'
@@ -77,6 +77,9 @@ class SesionWeb:
                            for f, c in entorno.obstaculos()],
             'modos': list(MODOS), 'escenarios': self.escenarios,
         }
+        if modo == MODO_PSO and not self.pso_disponible()[0]:
+            print(f'B+PSO no disponible: {self.pso_disponible()[1]}. Se inicia en modo A.')
+            modo = 'A'
         self._reiniciar_episodio(modo, escenario, semilla)
 
     # ---------- consultas (hilos HTTP) ----------
@@ -84,17 +87,14 @@ class SesionWeb:
         return self._config
 
     def pso_disponible(self):
-        """B+PSO exige soporte en main.py Y capturas/theta_optimo.json."""
-        if 'B+PSO' not in getattr(self.principal, 'MODOS', ()):
-            return False, 'main.py aún no incluye el modo B+PSO'
+        """B+PSO exige el modo en main.py y un theta válido según main.cargar_theta."""
+        if MODO_PSO not in getattr(self.principal, 'MODOS_V3', ()):
+            return False, 'main.py no incluye el modo B_PSO'
         try:
-            theta = json.loads(ARCHIVO_THETA.read_text(encoding='utf-8'))
-            valido = all(bajo <= float(theta[k]) <= alto for k, (bajo, alto) in LIMITES.items())
+            self.principal.cargar_theta(ARCHIVO_THETA)
         except FileNotFoundError:
-            return False, 'Falta capturas/theta_optimo.json'
+            return False, 'falta capturas/theta_optimo.json'
         except (OSError, ValueError, KeyError, TypeError):
-            valido = False
-        if not valido:
             return False, 'capturas/theta_optimo.json no tiene alpha, ks y kr válidos'
         return True, ''
 
@@ -163,7 +163,7 @@ class SesionWeb:
                 semilla = datos.get('semilla', self.semilla)
                 if modo not in MODOS:
                     raise ValueError('Modo inválido')
-                if modo == 'B+PSO' and not self.pso_disponible()[0]:
+                if modo == MODO_PSO and not self.pso_disponible()[0]:
                     raise ValueError('B+PSO no disponible: ' + self.pso_disponible()[1])
                 if escenario not in self.escenarios:
                     raise ValueError('Escenario inválido')
@@ -215,8 +215,9 @@ class SesionWeb:
 
     def _correr(self, modo, n_agentes, semilla):
         try:
+            theta = self.principal.cargar_theta(ARCHIVO_THETA) if modo == MODO_PSO else None
             r = self.principal.ejecutar_episodio(
-                n_agentes, modo, semilla, carpeta_salida=self._tmp.name, vista=self)
+                n_agentes, modo, semilla, carpeta_salida=self._tmp.name, theta=theta, vista=self)
             with self._cv:
                 if not self._cancelar:
                     self._resumen = {
@@ -302,7 +303,7 @@ class SesionWeb:
 class Manejador(BaseHTTPRequestHandler):
     sesion = None   # lo fija crear_servidor
     protocol_version = 'HTTP/1.1'
-    disable_nagle_algorithm = True   # sin esto, cada respuesta llega 100-250 ms tarde
+    disable_nagle_algorithm = True   # envía cada respuesta sin esperar al ACK de TCP
 
     def log_message(self, *args):
         pass   # sin ruido en la terminal
@@ -477,7 +478,7 @@ if __name__ == '__main__':
     parser.add_argument('--prueba', action='store_true', help='Autoprueba corta y termina')
     parser.add_argument('--no-abrir', action='store_true', help='No intentar abrir el navegador')
     parser.add_argument('--puerto', type=int, default=PUERTO)
-    parser.add_argument('--modo', choices=('A', 'B'), default='A')
+    parser.add_argument('--modo', choices=MODOS, default='A')
     parser.add_argument('--escenario', choices=tuple(principal.ESCENARIOS), default='S1')
     parser.add_argument('--semilla', type=int, default=42)
     args = parser.parse_args()
