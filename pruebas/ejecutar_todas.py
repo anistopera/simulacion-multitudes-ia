@@ -18,6 +18,8 @@ PRUEBAS = (
     'pruebas_telemetria',
     'pruebas_visualizacion',
     'pruebas_visualizacion_integrada',
+    'pruebas_dbscan',
+    'pruebas_pso',
 )
 
 
