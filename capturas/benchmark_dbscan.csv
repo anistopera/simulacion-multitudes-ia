@@ -1,0 +1,16 @@
+escenario,agentes,algoritmo,mediana_ms,p95_ms,max_ms,cumple_2ms
+S1,40,kd_tree,0.617,1.285,3.666,True
+S1,40,ball_tree,0.563,1.053,1.754,True
+S1,40,brute,1.361,2.046,3.403,True
+S1,40,auto,0.559,1.034,2.191,True
+S1,40,analisis_completo,1.646,1.963,3.006,True
+S2,80,kd_tree,0.607,0.925,2.821,True
+S2,80,ball_tree,0.662,1.529,2.366,True
+S2,80,brute,1.511,2.236,4.222,True
+S2,80,auto,0.669,0.964,1.845,True
+S2,80,analisis_completo,2.141,2.768,4.569,False
+S3,120,kd_tree,0.626,0.918,1.878,True
+S3,120,ball_tree,0.627,1.027,36.129,True
+S3,120,brute,1.378,1.837,2.85,True
+S3,120,auto,0.611,0.982,3.089,True
+S3,120,analisis_completo,0.645,0.838,1.231,True
