@@ -1,0 +1,17 @@
+{
+  "theta": {
+    "alpha": 2.983751370642523,
+    "ks": 2.0,
+    "kr": 0.9769039227654681
+  },
+  "mejor_J": 0.1333295806533833,
+  "semillas_calibracion": [
+    101,
+    102
+  ],
+  "agentes_calibracion": 120,
+  "semilla_pso": 2026,
+  "particulas": 6,
+  "iteraciones": 4,
+  "normalizacion_cero": "E0 y S0 usan piso de 1 unidad cuando son cero"
+}

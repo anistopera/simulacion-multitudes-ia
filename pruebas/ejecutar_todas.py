@@ -20,6 +20,7 @@ PRUEBAS = (
     'pruebas_visualizacion_integrada',
     'pruebas_dbscan',
     'pruebas_pso',
+    'pruebas_interfaz_web',
 )
 
 
