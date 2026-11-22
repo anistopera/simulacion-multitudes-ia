@@ -6,7 +6,6 @@ const lienzo = $('lienzo');
 const ctx = lienzo.getContext('2d', { alpha: false });
 const SONDEO_MIN_MS = 50;       // como máximo 20 consultas por segundo
 const DPR_MAX = 1.5;            // más resolución no se nota y calienta la GPU
-const NEUTRO = '#a9b6c6';       // peatones antes de iniciar
 const TIPO = { ruido: 0, frontera: 1, nucleo: 2 };
 
 let cfg = null;                 // mapa (de /config)
@@ -17,7 +16,9 @@ let ordenes = 0;                // descarta respuestas de /estado anteriores a u
 let resumenOculto = false;
 let avisoTimer = 0;
 let avisoFijo = false;          // error o desconexión: dura hasta que se resuelva
-const capas = { calor: false, grupos: false };
+const capas = { calor: false, grupos: false, rutas: false };
+let rutas = new Map();          // id -> waypoints [x, y]; vacío si la capa está apagada
+let rutasV = -1;                // versión de rutas recibida
 
 // Capas estáticas: se regeneran solo al cambiar el tamaño.
 const fondo = document.createElement('canvas');   // piso y cuadrícula
@@ -36,6 +37,8 @@ let intervalos = [];            // ms entre estados
 let tardanzas = [];             // ms que tarda en llegar cada estado
 let retraso = 120;              // ms de margen para tener siempre el estado siguiente
 let pendiente = true, cuadroPedido = false, animaba = false, ultimoCuadro = 0;
+const FUNDIDO_MS = 250;         // aparición de los peatones en un episodio nuevo
+let fundidoInicio = -Infinity;
 
 // ---- Metros -> píxeles. Origen (0, 0) abajo a la izquierda; el canvas lo tiene arriba. ----
 const px = (x) => x * escala;
@@ -44,11 +47,47 @@ const num = (v, d = 1) => v.toFixed(d).replace('.', ',');
 const limitar = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // Rampa rojo -> amarillo -> verde según q = velocidad real / deseada (101 tonos).
-const RAMPA = Array.from({ length: 101 }, (_, i) => {
-  const q = i / 100;
-  const [a, b, t] = q < 0.5 ? [[240, 82, 79], [242, 193, 78], q * 2] : [[242, 193, 78], [79, 209, 124], (q - 0.5) * 2];
-  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * t)).join(',')})`;
-});
+let RAMPA = [];
+let T = {};                     // colores del tema actual, leídos de las variables CSS
+
+function leerTema() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(`--${n}`).trim();
+  const hex = (h) => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+  const lista = (n) => v(n).split(',').map(Number);
+  const [rojo, amarillo, verde] = ['rojo', 'amarillo', 'verde'].map((n) => hex(v(n)));
+  RAMPA = Array.from({ length: 101 }, (_, i) => {
+    const q = i / 100;
+    const [a, b, t] = q < 0.5 ? [rojo, amarillo, q * 2] : [amarillo, verde, (q - 0.5) * 2];
+    return `rgb(${a.map((c, k) => Math.round(c + (b[k] - c) * t)).join(',')})`;
+  });
+  T = {
+    piso: v('lienzo-piso'), rejilla: v('lienzo-rejilla'), pared: v('pared'), texto: v('lienzo-texto'),
+    entrada: v('entrada'), salida: v('salida'), entradaTexto: v('entrada-texto'), salidaTexto: v('salida-texto'),
+    etiqueta: v('etiqueta-fondo'), neutro: v('neutro'), ruta: v('ruta'), borde: v('peaton-borde'),
+    ruido: v('ruido'), cruz: v('cruz'), contorno: v('cruz-contorno'),
+    calorIni: lista('calor-ini'), calorFin: lista('calor-fin'), calorAlfa: Number(v('calor-alfa')),
+  };
+}
+
+function alternarAtajos() {
+  const raiz = document.documentElement, visibles = raiz.dataset.atajos !== 'si';
+  if (visibles) raiz.dataset.atajos = 'si'; else delete raiz.dataset.atajos;
+  $('atajos').setAttribute('aria-checked', visibles);
+  try { localStorage.setItem('atajos', visibles ? 'si' : 'no'); } catch (e) { /* sin almacenamiento */ }
+}
+
+function cambiarTema() {
+  const raiz = document.documentElement, claro = raiz.dataset.tema !== 'claro';
+  if (claro) raiz.dataset.tema = 'claro'; else delete raiz.dataset.tema;
+  $('tema').setAttribute('aria-checked', claro);
+  try { localStorage.setItem('tema', claro ? 'claro' : 'oscuro'); } catch (e) { /* sin almacenamiento */ }
+  leerTema();
+  if (cfg) prepararCapas();
+  if (est) { pintarCalor(); copiarCalor(calorB); calorInicio = calorFin = 0; mezcla = -1; }
+  pendiente = true;
+  pedirCuadro();
+}
 const colorVelocidad = (q) => RAMPA[Math.round(limitar(q, 0, 1) * 100)];
 
 // ---- Capas estáticas ----
@@ -58,9 +97,9 @@ function prepararCapas() {
   fondo.height = frente.height = h;
 
   const f = fondo.getContext('2d');
-  f.fillStyle = '#23282e';
+  f.fillStyle = T.piso;
   f.fillRect(0, 0, w, h);
-  f.strokeStyle = 'rgba(255,255,255,0.055)';
+  f.strokeStyle = T.rejilla;
   f.lineWidth = Math.max(1, Math.round(dpr));
   f.beginPath();
   for (let x = 2; x < cfg.ancho; x += 2) { const p = Math.round(px(x)) + 0.5; f.moveTo(p, 0); f.lineTo(p, h); }
@@ -68,32 +107,21 @@ function prepararCapas() {
   f.stroke();
 
   const g = frente.getContext('2d');
-  g.fillStyle = '#5a646e';
+  g.fillStyle = T.pared;
   for (const [x, y] of cfg.obstaculos) {       // bordes redondeados a píxel: sin costuras
     const izq = Math.round(px(x)), der = Math.round(px(x + cfg.tam_celda));
     const arriba = Math.round(py(y + cfg.tam_celda)), abajo = Math.round(py(y));
     g.fillRect(izq, arriba, der - izq, abajo - arriba);
   }
   g.font = `${Math.round(Math.max(10, escala * 0.36))}px system-ui, sans-serif`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  for (const [p, color, texto] of [[cfg.entrada, '#4c8dff', 'Entrada'], [cfg.salida, '#b583ff', 'Salida']]) {
-    g.strokeStyle = g.fillStyle = color;
+  for (const [p, color] of [[cfg.entrada, T.entrada], [cfg.salida, T.salida]]) {
+    g.strokeStyle = color;
     g.lineWidth = Math.max(2, escala * 0.09);
     g.beginPath();
     g.arc(px(p[0]), py(p[1]), escala * 0.48, 0, 2 * Math.PI);
     g.stroke();
-    // Etiqueta en la franja superior, donde no pasan peatones, con una guía hasta el anillo.
-    g.fillText(texto, px(p[0]), py(cfg.alto - 0.55));
-    g.globalAlpha = 0.28;
-    g.lineWidth = Math.max(1, Math.round(dpr));
-    g.beginPath();
-    g.moveTo(Math.round(px(p[0])) + 0.5, py(cfg.alto - 0.95));
-    g.lineTo(Math.round(px(p[0])) + 0.5, py(p[1] + 0.48));
-    g.stroke();
-    g.globalAlpha = 1;
   }
-  g.fillStyle = 'rgba(255,255,255,0.32)';
+  g.fillStyle = T.texto;
   g.textAlign = 'left';
   g.textBaseline = 'bottom';
   g.fillText('(0, 0)', Math.round(escala * 0.15), h - Math.round(escala * 0.1));
@@ -132,10 +160,10 @@ function pintarCalor() {                       // solo cuando llega una matriz n
     for (let col = 0; col < m[f].length; col++) {
       const i = Math.min(1, m[f][col] / 4);    // satura en 4 personas/m²
       const k = 4 * ((m.length - 1 - f) * calorB.width + col);   // fila 0 = abajo
-      img.data[k] = 255;
-      img.data[k + 1] = 190 - 140 * i;
-      img.data[k + 2] = 70 - 25 * i;
-      img.data[k + 3] = 205 * Math.pow(i, 0.8);
+      for (let canal = 0; canal < 3; canal++) {
+        img.data[k + canal] = T.calorIni[canal] + (T.calorFin[canal] - T.calorIni[canal]) * i;
+      }
+      img.data[k + 3] = T.calorAlfa * Math.pow(i, 0.8);
     }
   }
   c.putImageData(img, 0, 0);
@@ -163,16 +191,47 @@ function mezclarCalor(ahora) {                 // dos copias sobre un canvas de 
 }
 
 // ---- Dibujo de un cuadro ----
-function dibujarAgentes(R) {
+function tramo(R) {                            // los dos estados que rodean al instante R
   const n = estados.length;
-  if (!n) return;
   let i = 0;
   while (i < n - 2 && estados[i + 1].r <= R) i++;
   const a = estados[i], b = estados[Math.min(i + 1, n - 1)];
-  const k = a === b ? 1 : limitar((R - a.r) / (b.r - a.r), 0, 1);
+  return [a, b, a === b ? 1 : limitar((R - a.r) / (b.r - a.r), 0, 1)];
+}
+
+function dibujarRutas(R) {
+  if (!rutas.size || !estados.length) return;
+  const [a, b, k] = tramo(R);
+  ctx.beginPath();
+  for (const fila of (k >= 1 ? b.agentes : a.agentes)) {
+    const ruta = rutas.get(fila[0]);
+    if (!ruta || !ruta.length) continue;
+    const sig = k < 1 ? b.porId.get(fila[0]) : null;
+    const x = sig ? fila[1] + (sig[1] - fila[1]) * k : fila[1];
+    const y = sig ? fila[2] + (sig[2] - fila[2]) * k : fila[2];
+    // Las rutas llegan cada segundo: se omiten los puntos que el agente ya pasó.
+    let cercano = 0, mejor = Infinity;
+    for (let i = 0; i < Math.min(5, ruta.length); i++) {
+      const d = (ruta[i][0] - x) ** 2 + (ruta[i][1] - y) ** 2;
+      if (d < mejor) { mejor = d; cercano = i; }
+    }
+    ctx.moveTo(px(x), py(y));
+    for (let i = Math.min(cercano + 1, ruta.length - 1); i < ruta.length; i++) {
+      ctx.lineTo(px(ruta[i][0]), py(ruta[i][1]));
+    }
+  }
+  ctx.strokeStyle = T.ruta;
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.stroke();
+}
+
+function dibujarAgentes(R) {
+  if (!estados.length) return;
+  const [a, b, k] = tramo(R);
   const radio = escala * 0.25;                 // radio físico: 0,25 m
   const borde = Math.max(1, dpr);
   const sinIniciar = est.t === 0;
+  ctx.globalAlpha = limitar((performance.now() - fundidoInicio) / FUNDIDO_MS, 0, 1);
 
   for (const fila of (k >= 1 ? b.agentes : a.agentes)) {
     const sig = k < 1 ? b.porId.get(fila[0]) : null;
@@ -180,12 +239,12 @@ function dibujarAgentes(R) {
     const y = sig ? fila[2] + (sig[2] - fila[2]) * k : fila[2];
     const q = sig ? fila[3] + (sig[3] - fila[3]) * k : fila[3];
     const tipo = sig ? sig[4] : fila[4];
-    const color = sinIniciar ? NEUTRO : colorVelocidad(q);
+    const color = sinIniciar ? T.neutro : colorVelocidad(q);
     const cx = px(x), cy = py(y);
 
     if (capas.grupos && tipo === TIPO.ruido) {
       const d = radio * 0.72;
-      ctx.strokeStyle = '#9aa1a8';
+      ctx.strokeStyle = T.ruido;
       ctx.lineWidth = Math.max(1.5, escala * 0.06);
       ctx.beginPath();
       ctx.moveTo(cx - d, cy - d); ctx.lineTo(cx + d, cy + d);
@@ -202,11 +261,12 @@ function dibujarAgentes(R) {
     } else {
       ctx.fillStyle = color;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(12,14,16,0.8)';
+      ctx.strokeStyle = T.borde;
       ctx.lineWidth = borde;
       ctx.stroke();
     }
   }
+  ctx.globalAlpha = 1;
 }
 
 function dibujarCentros() {
@@ -216,7 +276,7 @@ function dibujarCentros() {
   ctx.textBaseline = 'bottom';
   for (const [x, y, tamano] of est.centros) {
     const cx = px(x), cy = py(y);
-    for (const [color, ancho] of [['#101214', Math.max(4, escala * 0.17)], ['#ffffff', Math.max(2, escala * 0.07)]]) {
+    for (const [color, ancho] of [[T.contorno, Math.max(4, escala * 0.17)], [T.cruz, Math.max(2, escala * 0.07)]]) {
       ctx.strokeStyle = color;
       ctx.lineWidth = ancho;
       ctx.beginPath();
@@ -225,10 +285,27 @@ function dibujarCentros() {
       ctx.stroke();
     }
     ctx.lineWidth = Math.max(3, escala * 0.12);
-    ctx.strokeStyle = '#101214';
-    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = T.contorno;
+    ctx.fillStyle = T.cruz;
     ctx.strokeText(tamano, cx + d * 0.7, cy - d * 0.3);
     ctx.fillText(tamano, cx + d * 0.7, cy - d * 0.3);
+  }
+}
+
+// Arriba del anillo: queda pegada a él, sin tapar su centro ni salirse por el borde cercano.
+function dibujarEtiquetas() {
+  const alto = Math.round(Math.max(15, escala * 0.56));
+  ctx.font = `500 ${Math.round(alto * 0.68)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const [p, color, texto] of [[cfg.entrada, T.entradaTexto, 'Entrada'], [cfg.salida, T.salidaTexto, 'Salida']]) {
+    const ancho = Math.ceil(ctx.measureText(texto).width) + alto * 0.6;
+    const cx = limitar(px(p[0]), ancho / 2 + 2, lienzo.width - ancho / 2 - 2);
+    const arriba = Math.round(py(p[1] + 0.62)) - alto;
+    ctx.fillStyle = T.etiqueta;
+    ctx.fillRect(Math.round(cx - ancho / 2), arriba, Math.round(ancho), alto);
+    ctx.fillStyle = color;
+    ctx.fillText(texto, cx, arriba + alto / 2 + 1);
   }
 }
 
@@ -242,8 +319,10 @@ function dibujar(R) {
     ctx.drawImage(calor, 0, 0, lienzo.width, lienzo.height);
   }
   ctx.drawImage(frente, 0, 0);
+  if (capas.rutas) dibujarRutas(R);
   dibujarAgentes(R);
   if (capas.grupos) dibujarCentros();
+  dibujarEtiquetas();
 }
 
 // Solo se pide un cuadro si algo cambió o hay una animación en curso.
@@ -257,7 +336,7 @@ function cuadro(ahora) {
   const margen = est.fase === 'corriendo' ? retraso : 100;
   const R = ahora - desfase - margen;
   const ultimo = estados.length ? estados[estados.length - 1].r : -Infinity;
-  const anima = R < ultimo || (capas.calor && ahora < calorFin);
+  const anima = R < ultimo || (capas.calor && ahora < calorFin) || ahora < fundidoInicio + FUNDIDO_MS;
   if (animaba && !anima) pendiente = true;     // último cuadro, en la posición exacta
   animaba = anima;
   const minimo = est.velocidad === 4 ? 0 : 1000 / 30 - 4;   // 30 fps a x1 y x2; 60 a x4
@@ -348,6 +427,9 @@ function recibir(nuevo) {
 
   if (reinicio) {
     estados = [registro];
+    fundidoInicio = ahora;
+    rutas = new Map();
+    rutasV = -1;
     intervalos = [];
     tardanzas = [];
   } else if (nuevo.t !== est.t) {
@@ -363,6 +445,8 @@ function recibir(nuevo) {
     estados.push(registro);
     if (estados.length > 6) estados.shift();
   }
+
+  if (capas.rutas && nuevo.rutas) { rutas = new Map(nuevo.rutas); rutasV = nuevo.rutas_v; }
 
   const segundo = Math.floor(nuevo.t);
   const muestra = reinicio || segundo !== calorSeg;
@@ -402,7 +486,7 @@ async function sondear() {
   const inicio = performance.now(), marca = ordenes;
   let espera = 500;
   try {
-    const r = await fetch(`/estado?desde=${est ? est.seq : ''}`);
+    const r = await fetch(`/estado?desde=${est ? est.seq : ''}${capas.rutas ? `&rutas=1&rv=${rutasV}` : ''}`);
     if (r.status === 200) {
       const datos = await r.json();
       if (marca === ordenes) recibir(datos);
@@ -416,6 +500,7 @@ async function sondear() {
 }
 
 function capturar() {
+  fundidoInicio = -Infinity;
   dibujar(Infinity);
   lienzo.toBlob((datos) => {
     const enlace = document.createElement('a');
@@ -430,6 +515,11 @@ function capturar() {
 function alternarCapa(nombre, boton) {
   capas[nombre] = !capas[nombre];
   boton.setAttribute('aria-pressed', capas[nombre]);
+  if (nombre === 'rutas') {
+    rutas = new Map();
+    rutasV = -1;
+    if (capas.rutas) fetch('/estado?rutas=1&rv=-1').catch(() => {});   // avisa sin esperar al sondeo
+  }
   pendiente = true;
   pedirCuadro();
 }
@@ -442,7 +532,10 @@ $('res-reiniciar').onclick = () => enviar({ accion: 'reiniciar' });
 $('res-ver').onclick = () => { resumenOculto = true; $('resumen').hidden = true; };
 $('capa-calor').onclick = (e) => alternarCapa('calor', e.currentTarget);
 $('capa-grupos').onclick = (e) => alternarCapa('grupos', e.currentTarget);
+$('capa-rutas').onclick = (e) => alternarCapa('rutas', e.currentTarget);
 $('btn-captura').onclick = capturar;
+$('tema').onclick = cambiarTema;
+$('atajos').onclick = alternarAtajos;
 
 // Pulsar la opción ya elegida no hace nada, para no reiniciar el episodio por error.
 for (const b of document.querySelectorAll('[data-modo]')) {
@@ -468,7 +561,7 @@ document.addEventListener('click', (e) => {
 // ---- Atajos de teclado: pulsan el mismo botón, así respetan su estado deshabilitado ----
 const ATAJOS = {
   ' ': 'btn-iniciar', arrowright: 'btn-paso', x: 'btn-reiniciar',
-  h: 'capa-calor', c: 'capa-grupos', s: 'btn-captura',
+  h: 'capa-calor', c: 'capa-grupos', r: 'capa-rutas', s: 'btn-captura', t: 'tema', '?': 'atajos',
   a: '[data-modo="A"]', b: '[data-modo="B"]', p: '[data-modo="B_PSO"]',
   1: '[data-escenario="S1"]', 2: '[data-escenario="S2"]', 3: '[data-escenario="S3"]',
   q: '[data-semilla="42"]', w: '[data-semilla="43"]', e: '[data-semilla="44"]',
@@ -491,6 +584,9 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => { if (e.key === ' ') e.preventDefault(); });
 
 async function iniciar() {
+  leerTema();
+  $('tema').setAttribute('aria-checked', document.documentElement.dataset.tema === 'claro');
+  $('atajos').setAttribute('aria-checked', document.documentElement.dataset.atajos === 'si');
   cfg = await (await fetch('/config')).json();
   for (const c of [calor, calorA, calorB]) {
     c.width = Math.ceil(cfg.ancho / 2);

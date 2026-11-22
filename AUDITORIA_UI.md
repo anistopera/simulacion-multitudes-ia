@@ -1,5 +1,7 @@
 # AUDITORIA_UI — Interfaz web con controles (rama `feature/ui-controles-v3`)
 
+> Las secciones 1 a 7 son la auditoría inicial y están desactualizadas en PSO (modo real B_PSO), pruebas (13 scripts) y frecuencia de sondeo. El estado vigente está en la sección 8.
+
 > Fase 1 (solo lectura) aprobada; este documento se mantiene al día durante la implementación.
 
 ## Contexto
@@ -312,3 +314,61 @@ El commit 63ef023 subió `main.py` con marcadores de conflicto. Se resolvió edi
 **Verificación:** suite 13/13, autoprueba OK, `main.py` sin marcadores, `--help` correcto, `capturas/` sin cambios, `web/` 34,4 KB. La prueba con PSO usa un theta temporal de prueba, no una calibración real.
 
 **Pendiente:** capa Rutas (R), `theta_optimo.json` y actualizar en el README la mención a "diez scripts".
+
+### Capa Rutas (R)
+
+- Con la capa activa, el navegador pide `/estado?rutas=1&rv=V`. Sin ese parámetro, el estado no incluye rutas y no se calculan.
+- El servidor copia `a.ruta` de los agentes activos en el hilo de simulación, como máximo una vez por segundo simulado. Formato: `"rutas": [[id, [[x, y], ...]], ...]`, con `"rutas_v"` como versión. Solo se envían si la versión cambió.
+- El navegador dibuja una línea fina translúcida desde la posición actual de cada agente, debajo de los peatones.
+- `ARCHIVO_THETA` y el valor por defecto de `main.cargar_theta` son el mismo archivo: `capturas/theta_optimo.json`. No hizo falta cambiarlo.
+
+### Etiquetas, tema claro y conexiones cerradas
+
+Las etiquetas Entrada y Salida se dibujan sobre los peatones, pegadas arriba de su anillo y con fondo oscuro semitransparente. El tema claro se activa con el interruptor de la cabecera o la tecla `T`: el oscuro es el predeterminado, la elección se guarda en `localStorage`, `web/tema.js` la aplica antes del primer pintado, y todos los colores (incluido el canvas y la captura PNG) salen de variables CSS. `web/` pasa a 41,7 KB, por lo que el tope de la prueba de peso sube a 44 KB. `_responder` ya no escribe cuerpo en respuestas 204 e ignora `BrokenPipeError`, `ConnectionResetError` y `ConnectionAbortedError`, que solo indican que el navegador cerró la conexión antes de recibir la respuesta.
+
+### Atajos, iconos, ajustes visuales y PSO
+
+Los atajos quedan ocultos por defecto y se muestran con el botón de teclado o `?`; cada botón los indica en su `title`. El tema usa un interruptor con sol y luna, y la guía del grupo está en `docs/guias/INTERFAZ_WEB.md`.
+Se centraron los iconos con tamaños pares y corrección óptica de la luna, se igualó el aire superior e inferior, y las Rutas bajan a 0,12 de opacidad solo en claro.
+El responsive se revisó con capturas en 1366×768, 1920×1080, 1100×600 y 800×900, sin fallos; `web/` pesa 43,9 KB.
+
+**PSO ejecutado:** S3, semillas 101 y 102, 6 partículas y 4 iteraciones; `theta = (alpha 2,984, ks 2,000, kr 0,977)`. La comparación de 27 episodios está en `capturas/v3/`, y sus corridas A y B coinciden con las publicadas. B_PSO llegó al 100 % en los 9 episodios de evaluación. `ks` quedó en su límite superior.
+
+## Cómo habilitar B+PSO
+
+1. Generar el JSON desde la raíz del repositorio (calibra con S1 y las semillas 101 y 102; son unas 34 corridas completas):
+
+   ```bash
+   .venv/bin/python -m scripts_analisis.calibrar_pso --particulas 4 --iteraciones 3
+   ```
+
+2. Salida: `capturas/theta_optimo.json`. El mismo comando también escribe en `capturas/` `evaluaciones_pso.csv`, `historial_convergencia_pso.csv`, `convergencia_pso.png` y la carpeta `calibracion_pso/`.
+
+3. Formato esperado, con límites `alpha` en [0, 5], `ks` en [0,5, 2] y `kr` en [0,5, 3]:
+
+   ```json
+   {
+     "theta": { "alpha": 2.0, "ks": 1.5, "kr": 1.0 },
+     "mejor_J": 0.0,
+     "semillas_calibracion": [101, 102],
+     "agentes_calibracion": 40,
+     "semilla_pso": 2026,
+     "particulas": 4,
+     "iteraciones": 3,
+     "normalizacion_cero": "E0 y S0 usan piso de 1 unidad cuando son cero"
+   }
+   ```
+
+   Los valores anteriores solo ilustran la estructura; no son una calibración.
+
+4. Comprobar en la interfaz: con el servidor abierto, en menos de un segundo desaparece el aviso "B+PSO no disponible" y el botón B+PSO queda activo. Al pulsarlo (o la tecla `P`), la barra superior muestra `modo B+PSO` y el episodio vuelve a t=0 en pausa.
+
+## Estado final y pendiente
+
+**Estado:** interfaz web con modos, escenarios, semillas, velocidad, paso a paso, capas Calor, Grupos y Rutas, captura PNG y resumen final. Suite 13/13 y autoprueba correctas. `entorno.py` sin cambios y `web/` en 43,9 KB.
+
+**Pendiente:**
+- Revisar visualmente la capa Rutas en el navegador; las pruebas automáticas cubren sus datos, no su aspecto.
+- Validar la calibración de PSO con el equipo; `capturas/theta_optimo.json` es provisional y puede recalibrarse.
+- Actualizar la mención a "diez scripts" del README (fuera de este alcance).
+- Tomar las capturas de la sección 5.2 con Wendy.

@@ -51,6 +51,16 @@ def esperar(sesion, condicion, limite=15.0):
     raise AssertionError(f"Tiempo agotado en fase {estado['fase']}, t={estado['t']}")
 
 
+def esperar_rutas(sesion, vistas, limite=5.0):
+    fin = time.monotonic() + limite
+    while time.monotonic() < fin:
+        estado = sesion.estado(vistas)
+        if 'rutas' in estado:
+            return estado
+        time.sleep(0.01)
+    raise AssertionError('No llegaron rutas nuevas')
+
+
 class PruebasSesion(unittest.TestCase):
     def crear(self, principal, modo='A', escenario='S1', semilla=42):
         sesion = SesionWeb(principal, modo, escenario, semilla)
@@ -138,6 +148,29 @@ class PruebasSesion(unittest.TestCase):
         esperados.pop(10)
         self.assertEqual(tipos, esperados)
 
+    def test_rutas_solo_si_se_piden_y_una_vez_por_segundo(self):
+        sesion = self.crear(principal_corto(3.0))
+        self.assertNotIn('rutas', sesion.estado())
+        sesion.pedir_rutas()
+        estado = esperar_rutas(sesion, '')
+        version = estado['rutas_v']
+        self.assertEqual({r[0] for r in estado['rutas']}, {a[0] for a in estado['agentes']})
+        for _, ruta in estado['rutas']:
+            self.assertTrue(ruta)
+            self.assertTrue(all(len(p) == 2 and 0 <= p[0] <= 30 and 0 <= p[1] <= 20 for p in ruta))
+        self.assertNotIn('rutas', sesion.estado())
+        self.assertNotIn('rutas', sesion.estado(str(version)))
+        for decimas in range(1, 10):   # dentro del mismo segundo simulado no se recalculan
+            sesion.pedir_rutas()
+            sesion.comando({'accion': 'paso'})
+            esperar(sesion, lambda e: e['t'] >= decimas / 10 - 1e-9)
+            time.sleep(0.01)
+            self.assertNotIn('rutas', sesion.estado(str(version)))
+        sesion.pedir_rutas()
+        sesion.comando({'accion': 'paso'})
+        esperar(sesion, lambda e: e['t'] >= 1.0)
+        self.assertEqual(esperar_rutas(sesion, str(version))['rutas_v'], version + 1)
+
 
 class PruebasHTTP(unittest.TestCase):
     @classmethod
@@ -163,11 +196,29 @@ class PruebasHTTP(unittest.TestCase):
         finally:
             conexion.close()
 
+    def test_rutas_por_http_solo_con_parametro(self):
+        def leer(ruta):
+            conexion = http.client.HTTPConnection('127.0.0.1', self.puerto, timeout=5)
+            try:
+                conexion.request('GET', ruta)
+                return json.loads(conexion.getresponse().read())
+            finally:
+                conexion.close()
+
+        self.assertNotIn('rutas', leer('/estado'))
+        fin = time.monotonic() + 5
+        estado = leer('/estado?rutas=1')
+        while 'rutas' not in estado and time.monotonic() < fin:
+            time.sleep(0.02)
+            estado = leer('/estado?rutas=1')
+        self.assertIn('rutas', estado)
+        self.assertNotIn('rutas', leer(f"/estado?rutas=1&rv={estado['rutas_v']}"))
+
     def test_solo_escucha_en_localhost(self):
         self.assertEqual(self.servidor.server_address[0], '127.0.0.1')
 
     def test_estaticos_sin_cache(self):
-        for ruta in ('/', '/estilos.css', '/app.js'):
+        for ruta in ('/', '/estilos.css', '/app.js', '/tema.js'):
             respuesta = self.pedir('GET', ruta)
             self.assertEqual(respuesta.status, 200)
             self.assertEqual(respuesta.getheader('Cache-Control'), 'no-store')
@@ -187,8 +238,8 @@ class PruebasHTTP(unittest.TestCase):
 
 class PruebasArchivos(unittest.TestCase):
     def test_web_sin_recursos_externos_y_liviana(self):
-        archivos = [RAIZ / 'web' / n for n in ('index.html', 'estilos.css', 'app.js')]
-        self.assertLess(sum(a.stat().st_size for a in archivos), 40_000)
+        archivos = [a for a in (RAIZ / 'web').iterdir() if a.is_file()]
+        self.assertLess(sum(a.stat().st_size for a in archivos), 46_000)
         for archivo in archivos:
             texto = archivo.read_text(encoding='utf-8')
             self.assertIsNone(re.search(r'https?://|@import|url\(|src="//|href="//', texto), archivo)

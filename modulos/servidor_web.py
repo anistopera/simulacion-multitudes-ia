@@ -14,7 +14,8 @@ ejecuta exactamente el mismo ciclo que las corridas por lotes.
 
 Endpoints: GET /config (mapa, una vez), GET /estado,
 POST /control (órdenes). /estado?desde=N espera hasta 0,5 s a que haya un estado
-nuevo; si no lo hay responde 204, así el navegador no trabaja cuando nada cambia. Los archivos de web/ se leen del disco en cada petición.
+nuevo; si no lo hay responde 204, así el navegador no trabaja cuando nada cambia.
+/estado?rutas=1&rv=V agrega las rutas solo si hay una versión distinta de V. Los archivos de web/ se leen del disco en cada petición.
 """
 import argparse
 import json
@@ -47,7 +48,8 @@ HTML, CSS, JS = ('text/html; charset=utf-8', 'text/css; charset=utf-8',
                  'text/javascript; charset=utf-8')
 # Lista blanca: solo estos archivos de web/ se sirven; nada más del repositorio.
 ESTATICOS = {'/': ('index.html', HTML), '/index.html': ('index.html', HTML),
-             '/estilos.css': ('estilos.css', CSS), '/app.js': ('app.js', JS)}
+             '/estilos.css': ('estilos.css', CSS), '/app.js': ('app.js', JS),
+             '/tema.js': ('tema.js', JS)}
 # Todo debe venir de este mismo servidor: la interfaz no usa recursos externos.
 POLITICA = "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'"
 
@@ -68,6 +70,10 @@ class SesionWeb:
         self._pso_visto = None
         self._ultima_publicacion = 0.0
         self._dt_medio = 0.1                          # segundos reales por tick
+        self._rutas = None                            # solo existe si el navegador las pide
+        self._rutas_segundo = None
+        self._rutas_v = 0
+        self._rutas_hasta = 0.0                       # se dejan de calcular tras esta hora
         entorno = Entorno(configuracion=str(principal.CARPETA / 'configuracion.json'))
         self._config = {
             'ancho': entorno.ancho, 'alto': entorno.alto, 'tam_celda': entorno.tam_celda,
@@ -98,10 +104,23 @@ class SesionWeb:
             return False, 'capturas/theta_optimo.json no tiene alpha, ks y kr válidos'
         return True, ''
 
-    def esperar_cambio(self, desde, limite=0.5):
+    def pedir_rutas(self):
+        """El navegador tiene la capa activa: mantiene el cálculo por 2 s más."""
+        with self._cv:
+            inactiva = time.monotonic() > self._rutas_hasta
+            self._rutas_hasta = time.monotonic() + 2.0
+            if inactiva:
+                self._cv.notify_all()   # en pausa, despierta al hilo para calcularlas
+
+    def _rutas_nuevas(self, rutas_vistas):
+        return (rutas_vistas is not None and self._rutas is not None
+                and str(self._rutas_v) != rutas_vistas)
+
+    def esperar_cambio(self, desde, limite=0.5, rutas_vistas=None):
         """True si hay un estado distinto de `desde`; espera como máximo `limite` s."""
         with self._cv:
-            if self._cv.wait_for(lambda: self._seq != desde, timeout=limite):
+            if self._cv.wait_for(lambda: self._seq != desde or self._rutas_nuevas(rutas_vistas),
+                                 timeout=limite):
                 return True
         pso = self.pso_disponible()
         with self._cv:
@@ -111,9 +130,11 @@ class SesionWeb:
                 return True
         return False
 
-    def estado(self):
+    def estado(self, rutas_vistas=None):
         with self._cv:
             snap, error, resumen, seq = self._snap, self._error, self._resumen, self._seq
+            extra = ({'rutas': self._rutas, 'rutas_v': self._rutas_v}
+                     if self._rutas_nuevas(rutas_vistas) else {})
             if error:
                 fase = 'error'
             elif self._terminado:
@@ -124,7 +145,7 @@ class SesionWeb:
                 fase = 'corriendo'
             modo, escenario, semilla = self.modo, self.escenario, self.semilla
         disponible, motivo = self.pso_disponible()
-        return {**snap, 'fase': fase, 'modo': modo, 'escenario': escenario,
+        return {**snap, **extra, 'fase': fase, 'modo': modo, 'escenario': escenario,
                 'semilla': semilla, 'total': self.escenarios[escenario],
                 'velocidad': self._velocidad, 'seq': seq,
                 'velocidad_real': round(0.1 / self._dt_medio, 1),
@@ -199,6 +220,7 @@ class SesionWeb:
             self._cancelar = False
             self._pausado = True
             self._pasos = 0
+            self._rutas = None
             self._conectado = False
             self._terminado = False
             self._error = None
@@ -235,7 +257,7 @@ class SesionWeb:
 
     # ---------- interfaz de vista que usa main.ejecutar_episodio ----------
     def conectar(self, motor, diagnostico):
-        self._diagnostico = diagnostico
+        self._motor, self._diagnostico = motor, diagnostico
         self._publicar(motor.agentes_activos, 0.0, 0, diagnostico.densidad)
         with self._cv:
             self._conectado = True
@@ -244,13 +266,29 @@ class SesionWeb:
     def procesar_eventos(self, eventos=None):
         """Se llama al inicio de cada tick. Bloquea en pausa; False = detener."""
         with self._cv:
+            self._preparar_rutas()
             while self._pausado and self._pasos == 0 and not self._cancelar:
                 self._cv.wait(0.5)
+                self._preparar_rutas()
             if self._cancelar:
                 return False
             if self._pausado:
                 self._pasos -= 1
             return True
+
+    def _preparar_rutas(self):
+        """Copia las rutas en el hilo de simulación, máximo una vez por segundo simulado."""
+        if time.monotonic() > self._rutas_hasta:
+            self._rutas = None
+            return
+        segundo = int(self._snap['t'])
+        if self._rutas is None or segundo != self._rutas_segundo:
+            self._rutas = [[a.id, [[round(x, 2), round(y, 2)] for x, y in a.ruta]]
+                           for a in self._motor.agentes_activos]
+            self._rutas_segundo = segundo
+            self._rutas_v += 1
+            self._seq += 1
+            self._cv.notify_all()
 
     def dibujar(self, agentes, tiempo_simulado, llegados=None, densidad=None):
         self._publicar(agentes, tiempo_simulado, llegados, densidad)
@@ -311,15 +349,19 @@ class Manejador(BaseHTTPRequestHandler):
     def _responder(self, codigo, cuerpo, tipo='application/json; charset=utf-8'):
         if isinstance(cuerpo, (dict, list)):
             cuerpo = json.dumps(cuerpo, separators=(',', ':')).encode('utf-8')
-        self.send_response(codigo)
-        self.send_header('Content-Type', tipo)
-        if codigo != 204:
-            self.send_header('Content-Length', str(len(cuerpo)))
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Content-Security-Policy', POLITICA)
-        self.end_headers()
-        self.wfile.write(cuerpo)
+        try:
+            self.send_response(codigo)
+            self.send_header('Content-Type', tipo)
+            if codigo != 204:
+                self.send_header('Content-Length', str(len(cuerpo)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Content-Security-Policy', POLITICA)
+            self.end_headers()
+            if cuerpo:
+                self.wfile.write(cuerpo)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            self.close_connection = True   # el navegador cerró antes de recibir la respuesta
 
     def _origen_valido(self):
         """Solo acepta peticiones dirigidas a 127.0.0.1/localhost (anti DNS-rebinding)
@@ -336,10 +378,16 @@ class Manejador(BaseHTTPRequestHandler):
         partes = urlsplit(self.path)
         ruta = partes.path
         if ruta == '/estado':
-            desde = parse_qs(partes.query).get('desde', [''])[0]
-            if desde.isdigit() and not self.sesion.esperar_cambio(int(desde)):
+            consulta = parse_qs(partes.query)
+            desde = consulta.get('desde', [''])[0]
+            rutas_vistas = None
+            if consulta.get('rutas', [''])[0] == '1':
+                rutas_vistas = consulta.get('rv', [''])[0]
+                self.sesion.pedir_rutas()
+            if desde.isdigit() and not self.sesion.esperar_cambio(int(desde),
+                                                                  rutas_vistas=rutas_vistas):
                 return self._responder(204, b'')
-            return self._responder(200, self.sesion.estado())
+            return self._responder(200, self.sesion.estado(rutas_vistas))
         if ruta == '/config':
             return self._responder(200, self.sesion.config())
         if ruta in ESTATICOS:

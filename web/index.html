@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Simulación de multitudes</title>
+  <script src="/tema.js"></script>
   <link rel="stylesheet" href="/estilos.css">
 </head>
 <body>
@@ -12,15 +13,23 @@
       <h1>Simulación de multitudes</h1>
       <span id="indicador" class="listo" role="status"><i></i><b id="indicador-txt">Listo</b></span>
       <span id="contexto"></span>
+      <button type="button" id="atajos" role="switch" aria-checked="false" aria-label="Mostrar atajos de teclado" title="Mostrar u ocultar atajos (?)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/></svg>
+      </button>
+      <button type="button" id="tema" role="switch" aria-checked="false" aria-label="Tema claro" title="Cambiar tema (T)">
+        <i aria-hidden="true"></i>
+        <svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path transform="translate(.75 -.75)" d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+      </button>
     </header>
 
     <aside class="panel" id="controles" aria-label="Controles">
       <section>
         <h2>Modo <kbd>A</kbd><kbd>B</kbd><kbd>P</kbd></h2>
         <div class="segmentado">
-          <button type="button" data-modo="A" title="Ruta fija">A</button>
-          <button type="button" data-modo="B" title="Ruta adaptativa">B</button>
-          <button type="button" data-modo="B_PSO" title="Ruta adaptativa con parámetros PSO">B+PSO</button>
+          <button type="button" data-modo="A" title="Modo A: ruta fija (A)">A</button>
+          <button type="button" data-modo="B" title="Modo B: ruta adaptativa (B)">B</button>
+          <button type="button" data-modo="B_PSO" title="Modo B+PSO: parámetros calibrados (P)">B+PSO</button>
         </div>
         <p class="nota" id="nota-pso" hidden></p>
       </section>
@@ -28,40 +37,43 @@
       <section>
         <h2>Escenario <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></h2>
         <div class="segmentado">
-          <button type="button" data-escenario="S1">S1 <small>40</small></button>
-          <button type="button" data-escenario="S2">S2 <small>80</small></button>
-          <button type="button" data-escenario="S3">S3 <small>120</small></button>
+          <button type="button" data-escenario="S1" title="Escenario S1: 40 agentes (1)">S1 <small>40</small></button>
+          <button type="button" data-escenario="S2" title="Escenario S2: 80 agentes (2)">S2 <small>80</small></button>
+          <button type="button" data-escenario="S3" title="Escenario S3: 120 agentes (3)">S3 <small>120</small></button>
         </div>
         <h3>Semilla <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd></h3>
         <div class="segmentado chico">
-          <button type="button" data-semilla="42">42</button>
-          <button type="button" data-semilla="43">43</button>
-          <button type="button" data-semilla="44">44</button>
+          <button type="button" data-semilla="42" title="Semilla 42 (Q)">42</button>
+          <button type="button" data-semilla="43" title="Semilla 43 (W)">43</button>
+          <button type="button" data-semilla="44" title="Semilla 44 (E)">44</button>
         </div>
       </section>
 
       <section class="reproduccion">
         <h2>Reproducción</h2>
-        <button type="button" class="principal" id="btn-iniciar"><span id="btn-iniciar-txt">Iniciar</span> <kbd>Espacio</kbd></button>
+        <button type="button" class="principal" id="btn-iniciar" title="Iniciar o pausar (Espacio)"><span id="btn-iniciar-txt">Iniciar</span> <kbd>Espacio</kbd></button>
         <div class="par">
-          <button type="button" id="btn-paso" title="Avanza 0,1 s">Paso <kbd>→</kbd></button>
-          <button type="button" id="btn-reiniciar">Reiniciar <kbd>X</kbd></button>
+          <button type="button" id="btn-paso" title="Paso de 0,1 s (→)">Paso <kbd>→</kbd></button>
+          <button type="button" id="btn-reiniciar" title="Reiniciar (X)">Reiniciar <kbd>X</kbd></button>
         </div>
         <h3>Velocidad <kbd>V</kbd></h3>
         <div class="segmentado">
-          <button type="button" data-velocidad="1">x1</button>
-          <button type="button" data-velocidad="2">x2</button>
-          <button type="button" data-velocidad="4">x4</button>
+          <button type="button" data-velocidad="1" title="Velocidad x1 (V alterna)">x1</button>
+          <button type="button" data-velocidad="2" title="Velocidad x2 (V alterna)">x2</button>
+          <button type="button" data-velocidad="4" title="Velocidad x4 (V alterna)">x4</button>
         </div>
       </section>
 
       <section>
         <h2>Capas</h2>
         <div class="par">
-          <button type="button" id="capa-calor" aria-pressed="false">Calor <kbd>H</kbd></button>
-          <button type="button" id="capa-grupos" aria-pressed="false">Grupos <kbd>C</kbd></button>
+          <button type="button" id="capa-calor" aria-pressed="false" title="Mapa de calor (H)">Calor <kbd>H</kbd></button>
+          <button type="button" id="capa-grupos" aria-pressed="false" title="Grupos DBSCAN (C)">Grupos <kbd>C</kbd></button>
         </div>
-        <button type="button" id="btn-captura">Capturar PNG <kbd>S</kbd></button>
+        <div class="par">
+          <button type="button" id="capa-rutas" aria-pressed="false" title="Rutas restantes (R)">Rutas <kbd>R</kbd></button>
+          <button type="button" id="btn-captura" title="Capturar PNG del recinto (S)">Capturar <kbd>S</kbd></button>
+        </div>
       </section>
     </aside>
 
