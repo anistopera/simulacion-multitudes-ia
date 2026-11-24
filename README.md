@@ -41,7 +41,7 @@ Entorno -> MotorAgentes (0,1 s) -> Telemetria (1,0 s)
                   siguiente tick <---------- NavegadorAdaptativo A*
 
 Visualizacion Pygame <- agentes + tiempo + diagnostico.densidad
-PSO (pendiente de conectar a episodios) <- métricas agregadas de Telemetria
+PSO (calibración por lotes; theta en capturas/theta_optimo.json) <- métricas agregadas de Telemetria
 ```
 
 DBSCAN aporta evidencia estructural de agrupamientos y ruido; sus etiquetas **no son la entrada de las reglas del diagnóstico actual**. La realimentación de A* utiliza `D`. La vista necesita densidad en personas/m², no la matriz normalizada `D` ni los estados de cadenas.
@@ -65,7 +65,7 @@ DBSCAN aporta evidencia estructural de agrupamientos y ruido; sus etiquetas **no
 ├── requirements.txt              # Dependencias del prototipo
 ├── AGENTS.md                     # Reglas de colaboración
 ├── modulos/                      # Los ocho componentes y __init__.py
-├── pruebas/                      # Diez scripts y ejecutar_todas.py
+├── pruebas/                      # Trece scripts y ejecutar_todas.py
 ├── demos/                        # Cuatro demostraciones independientes
 ├── scripts_analisis/             # Generación de datos, calibración, figuras y Word
 ├── docs/
@@ -153,6 +153,15 @@ Remove-Item Env:SDL_VIDEODRIVER
 
 Esto conserva el ciclo visual y su límite de cuadros, pero no abre una ventana visible. La corrida sigue generando CSV en las rutas normales.
 
+### Demostración final (un solo comando)
+
+```bash
+python demo_final.py                  # abre la interfaz web V3
+python demo_final.py --con-pruebas    # corre antes las 13 pruebas
+```
+
+Verifica librerías y archivos, opcionalmente corre la suite y abre la interfaz en el navegador. No escribe en `capturas/`.
+
 ### Batería experimental completa
 
 ```bash
@@ -177,7 +186,7 @@ Las rutas de archivos consignadas en el CSV de resultados son relativas a `captu
 python -m pruebas.ejecutar_todas
 ```
 
-El ejecutor invoca secuencialmente los diez scripts con el mismo intérprete, fija la raíz de ejecución y devuelve un código distinto de cero si cualquiera falla. Incluye pruebas escritas como funciones con `__main__`, que no serían ejecutadas por una búsqueda de `unittest` limitada a clases `TestCase`.
+El ejecutor invoca secuencialmente los trece scripts con el mismo intérprete, fija la raíz de ejecución y devuelve un código distinto de cero si cualquiera falla. Incluye pruebas escritas como funciones con `__main__`, que no serían ejecutadas por una búsqueda de `unittest` limitada a clases `TestCase`.
 
 También pueden ejecutarse individualmente:
 
@@ -192,6 +201,9 @@ python -m pruebas.pruebas_telemetria
 python -m pruebas.pruebas_integracion
 python -m pruebas.pruebas_visualizacion
 python -m pruebas.pruebas_visualizacion_integrada
+python -m pruebas.pruebas_dbscan
+python -m pruebas.pruebas_pso
+python -m pruebas.pruebas_interfaz_web
 ```
 
 Las pruebas cubren dimensiones y conectividad del entorno, física y contactos, llegada, contratos de matrices, reglas temporales, A*, PSO sintético, telemetría, controles de pantalla y cierre de la integración. Las gráficas usan SDL dummy y las exportaciones de prueba usan directorios temporales.
